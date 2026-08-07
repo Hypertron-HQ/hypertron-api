@@ -141,3 +141,17 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+/generated/prisma
+
+# Prisma generated config (contains local paths)
+prisma.config.ts
+
+# Kiro/agent skill locks
+skills-lock.json
+.claude/
+.windsurf/
+.agents/
+
+# Build output
+dist/

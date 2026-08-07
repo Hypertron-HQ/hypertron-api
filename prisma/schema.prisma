@@ -1,0 +1,227 @@
+// Hypertron Payments API — Prisma Schema (MongoDB)
+// All 7 models required by Payments_API_v1_Schema.md
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum Environment {
+  test
+  live
+}
+
+enum PaymentStatus {
+  created
+  pending
+  confirmed
+  completed
+  failed
+  expired
+  canceled
+}
+
+enum PaymentCurrency {
+  USDC
+  EURC
+  XLM
+}
+
+enum DeliveryStatus {
+  pending
+  delivered
+  failed
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ApiKey — merchant API credentials
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ApiKey {
+  id          String      @id @default(auto()) @map("_id") @db.ObjectId
+  publicId    String      @unique               // key_01J... (returned to client)
+  businessId  String      @db.ObjectId
+  name        String
+  environment Environment
+  keyPrefix   String                            // "sk_test_" or "sk_live_"
+  secretHash  String                            // bcrypt hash — never returned
+  lastFour    String                            // last 4 chars of raw key
+  active      Boolean     @default(true)
+  lastUsedAt  DateTime?
+  createdAt   DateTime    @default(now())
+  revokedAt   DateTime?
+
+  @@index([businessId])
+  @@index([keyPrefix, businessId])
+  @@unique([businessId, environment, keyPrefix])
+  @@map("api_keys")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Customer — merchant-scoped customer identity
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Customer {
+  id                    String    @id @default(auto()) @map("_id") @db.ObjectId
+  publicId              String    @unique              // cus_01J...
+  businessId            String    @db.ObjectId
+  email                 String?                        // normalized lowercase
+  name                  String?
+  metadata              Json      @default("{}")
+  paymentCount          Int       @default(0)
+  lifetimeValue         String    @default("0.00")     // decimal string
+  lifetimeValueCurrency String    @default("USDC")
+  lastPaymentAt         DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  payments Payment[]
+
+  @@index([businessId])
+  @@index([businessId, email])
+  @@map("customers")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Payment — canonical payment resource
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Payment {
+  id                 String          @id @default(auto()) @map("_id") @db.ObjectId
+  publicId           String          @unique              // pay_01J...
+  businessId         String          @db.ObjectId
+  environment        Environment
+  status             PaymentStatus   @default(created)
+  amount             String                               // decimal string
+  currency           PaymentCurrency
+  description        String?
+  customerId         String?         @db.ObjectId
+  customer           Customer?       @relation(fields: [customerId], references: [id])
+  metadata           Json            @default("{}")
+  checkoutUrl        String
+  paymentLinkId      String          @unique
+  linkMemo           String          @unique              // hpl_... Stellar memo
+  destinationAddress String                               // Stellar receiving address
+  payerAddress       String?                              // filled by reconciler
+  transactionHash    String?         @unique              // unique when present
+  assetIssuer        String?                              // null for XLM
+  failureCode        String?
+  failureMessage     String?
+  expiresAt          DateTime?
+  paidAt             DateTime?
+  completedAt        DateTime?
+  canceledAt         DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  events PaymentEvent[]
+
+  @@index([businessId])
+  @@index([businessId, environment, createdAt])
+  @@index([businessId, status, createdAt])
+  @@index([businessId, customerId])
+  @@map("payments")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PaymentEvent — immutable append-only audit log
+// ─────────────────────────────────────────────────────────────────────────────
+
+model PaymentEvent {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  publicId   String   @unique              // evt_01J...
+  businessId String   @db.ObjectId
+  paymentId  String   @db.ObjectId
+  payment    Payment  @relation(fields: [paymentId], references: [id])
+  type       String                        // e.g. "payment.completed"
+  data       Json                          // immutable payment snapshot
+  createdAt  DateTime @default(now())
+
+  @@index([businessId])
+  @@index([paymentId])
+  @@unique([paymentId, type])
+  @@map("payment_events")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WebhookEndpoint — merchant webhook destinations
+// ─────────────────────────────────────────────────────────────────────────────
+
+model WebhookEndpoint {
+  id                     String      @id @default(auto()) @map("_id") @db.ObjectId
+  publicId               String      @unique              // we_01J...
+  businessId             String      @db.ObjectId
+  environment            Environment
+  url                    String
+  description            String?
+  events                 String[]                         // subscribed event types
+  signingSecretEncrypted String                           // AES-256-GCM ciphertext
+  secretLastFour         String
+  active                 Boolean     @default(true)
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
+  disabledAt             DateTime?
+
+  deliveries WebhookDelivery[]
+
+  @@index([businessId])
+  @@index([businessId, environment])
+  @@map("webhook_endpoints")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WebhookDelivery — delivery tracking and retry state
+// ─────────────────────────────────────────────────────────────────────────────
+
+model WebhookDelivery {
+  id             String          @id @default(auto()) @map("_id") @db.ObjectId
+  publicId       String          @unique              // whd_01J...
+  businessId     String          @db.ObjectId
+  endpointId     String          @db.ObjectId
+  endpoint       WebhookEndpoint @relation(fields: [endpointId], references: [id])
+  eventId        String                               // PaymentEvent.publicId
+  status         DeliveryStatus  @default(pending)
+  attemptCount   Int             @default(0)
+  nextAttemptAt  DateTime?
+  lastAttemptAt  DateTime?
+  responseStatus Int?
+  responseBody   String?                              // truncated to 2KB
+  deliveredAt    DateTime?
+  createdAt      DateTime        @default(now())
+
+  @@index([businessId])
+  @@index([endpointId])
+  @@index([eventId])
+  @@unique([endpointId, eventId])
+  @@map("webhook_deliveries")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// IdempotencyRecord — POST /v1/payments replay store
+// ─────────────────────────────────────────────────────────────────────────────
+
+model IdempotencyRecord {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  businessId     String   @db.ObjectId
+  apiKeyId       String   @db.ObjectId
+  key            String
+  requestHash    String                        // SHA-256 of request body
+  responseStatus Int
+  responseBody   Json
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime                      // TTL: createdAt + 24h
+
+  @@index([businessId])
+  @@index([apiKeyId])
+  @@index([expiresAt])
+  @@unique([businessId, apiKeyId, key])
+  @@map("idempotency_records")
+}

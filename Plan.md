@@ -1361,15 +1361,15 @@ Each phase has a clear definition of done and can be merged and deployed indepen
 
 ### Phase 0 — Project scaffold (Day 1–2)
 
-- [ ] Scaffold NestJS project with pnpm and strict TypeScript
-- [ ] Install all dependencies
-- [ ] Configure Prisma with MongoDB connection
-- [ ] Set up `@nestjs/config` with Joi validation
-- [ ] Configure Pino structured logging
-- [ ] Implement `main.ts` with global pipes, Helmet, CORS
-- [ ] Implement `/health` endpoint with `@nestjs/terminus`
-- [ ] Set up Jest with `ts-jest`
-- [ ] Verify: `pnpm build` passes, health check returns 200
+- [x] Scaffold NestJS project with pnpm and strict TypeScript
+- [x] Install all dependencies
+- [x] Configure Prisma with MongoDB connection
+- [x] Set up `@nestjs/config` with Joi validation
+- [x] Configure Pino structured logging
+- [x] Implement `main.ts` with global pipes, Helmet, CORS
+- [x] Implement `/health` endpoint with `@nestjs/terminus`
+- [x] Set up Jest with `ts-jest`
+- [x] Verify: `pnpm build` passes, health check returns 200
 
 ### Phase 1 — Data models and ID generation (Day 2–3)
 
