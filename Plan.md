@@ -1373,12 +1373,12 @@ Each phase has a clear definition of done and can be merged and deployed indepen
 
 ### Phase 1 — Data models and ID generation (Day 2–3)
 
-- [ ] Define all 7 Prisma models with full field specs and indexes
-- [ ] Implement `IdGenerator` with prefixed ULIDs
-- [ ] Implement `CryptoUtil` (key hash, HMAC, AES-GCM encrypt/decrypt)
-- [ ] Implement `AmountUtil` (decimal validation, precision, addition)
-- [ ] Run Prisma migrate/push; verify collections and indexes exist
-- [ ] Unit tests for all utilities (target 100% coverage)
+- [x] Define all 7 Prisma models with full field specs and indexes
+- [x] Implement `IdGenerator` with prefixed ULIDs
+- [x] Implement `CryptoUtil` (key hash, HMAC, AES-GCM encrypt/decrypt)
+- [x] Implement `AmountUtil` (decimal validation, precision, addition)
+- [x] Run Prisma migrate/push; verify collections and indexes exist
+- [x] Unit tests for all utilities (target 100% coverage)
 
 ### Phase 2 — Authentication layer (Day 3–4)
 
