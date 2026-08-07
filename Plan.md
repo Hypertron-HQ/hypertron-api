@@ -1392,12 +1392,12 @@ Each phase has a clear definition of done and can be merged and deployed indepen
 
 ### Phase 3 — Developer API (Day 4–5)
 
-- [ ] Implement `POST /api/developer/api-keys` (session auth, Owner/Admin)
-- [ ] Implement `GET /api/developer/api-keys` (returns `secret_key: null`)
-- [ ] Implement `POST /api/developer/api-keys/:id/rotate`
-- [ ] Implement `POST /api/developer/api-keys/:id/revoke`
-- [ ] Integrate existing Privy session guard; implement `SessionGuard` and `RolesGuard`
-- [ ] Integration tests for all four key management routes
+- [x] Implement `POST /api/developer/api-keys` (session auth, Owner/Admin)
+- [x] Implement `GET /api/developer/api-keys` (returns `secret_key: null`)
+- [x] Implement `POST /api/developer/api-keys/:id/rotate`
+- [x] Implement `POST /api/developer/api-keys/:id/revoke`
+- [x] Integrate existing Privy session guard; implement `SessionGuard` and `RolesGuard`
+- [x] Integration tests for all four key management routes
 
 ### Phase 4 — Payments CRUD (Day 5–8)
 

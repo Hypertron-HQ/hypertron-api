@@ -82,6 +82,10 @@ async function bootstrap(): Promise<void> {
         { type: 'http', scheme: 'bearer', bearerFormat: 'sk_test_... / sk_live_...' },
         'ApiKey',
       )
+      .addBearerAuth(
+        { type: 'http', scheme: 'bearer', bearerFormat: 'base64url JSON session token' },
+        'SessionToken',
+      )
       .addTag('Payments', 'Create, read, list, and cancel payments')
       .addTag('Customers', 'Merchant-scoped customer records')
       .addTag('Developer', 'Dashboard control-plane: API keys and webhooks')
