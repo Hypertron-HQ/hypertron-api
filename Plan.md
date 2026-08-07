@@ -1382,13 +1382,13 @@ Each phase has a clear definition of done and can be merged and deployed indepen
 
 ### Phase 2 — Authentication layer (Day 3–4)
 
-- [ ] Implement `ApiKeyService.generate()` with correct prefix format
-- [ ] Implement `ApiKeyService.hash()` using bcrypt
-- [ ] Implement `ApiKeyService.verify()` with bcrypt compare
-- [ ] Implement `ApiKeyGuard` that extracts and verifies keys, attaches `merchant` to request
-- [ ] Implement `@CurrentMerchant()` decorator
-- [ ] Unit tests for key lifecycle; integration test for guard
-- [ ] Verify: authenticated request resolves merchant; invalid key returns 401
+- [x] Implement `ApiKeyService.generate()` with correct prefix format
+- [x] Implement `ApiKeyService.hash()` using bcrypt
+- [x] Implement `ApiKeyService.verify()` with bcrypt compare
+- [x] Implement `ApiKeyGuard` that extracts and verifies keys, attaches `merchant` to request
+- [x] Implement `@CurrentMerchant()` decorator
+- [x] Unit tests for key lifecycle; integration test for guard
+- [x] Verify: authenticated request resolves merchant; invalid key returns 401
 
 ### Phase 3 — Developer API (Day 4–5)
 

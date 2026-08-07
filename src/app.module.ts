@@ -11,6 +11,7 @@ import securityConfig from './common/config/security.config';
 
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
 import { HealthModule } from './health/health.module';
+import { AuthModule } from './modules/auth/auth.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { HealthModule } from './health/health.module';
 
     // ── Feature modules ────────────────────────────────────────────────────
     HealthModule,
+    AuthModule,
   ],
 })
 export class AppModule {}
