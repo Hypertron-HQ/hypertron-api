@@ -14,6 +14,7 @@ import { HealthModule } from './health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { DeveloperModule } from './modules/developer/developer.module';
 import { PaymentsModule } from './modules/payments/payments.module';
+import { CustomersModule } from './modules/customers/customers.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { PaymentsModule } from './modules/payments/payments.module';
     // ── Feature modules ────────────────────────────────────────────────────
     HealthModule,
     AuthModule,
+    CustomersModule,
     DeveloperModule,
     PaymentsModule,
   ],

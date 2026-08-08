@@ -1,0 +1,389 @@
+/**
+ * Integration tests — Phase 5 Customer API
+ *
+ * Covers:
+ *   GET /v1/customers         — API-key auth, list with has_more/cursor
+ *   GET /v1/customers/:id     — retrieve single customer, 404
+ *   GET /api/developer/customers       — session auth, list
+ *   GET /api/developer/customers/:id   — session auth, retrieve
+ *
+ * Auth/isolation scenarios:
+ *   - 401 on missing auth (both planes)
+ *   - 404 for customer belonging to different business
+ *   - Cross-merchant isolation enforced
+ */
+
+import { Module, Controller, UseGuards } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { Test, TestingModule } from '@nestjs/testing';
+import * as request from 'supertest';
+import type { INestApplication } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
+import type { Customer, ApiKey } from '@prisma/client';
+
+import securityConfig from '@/common/config/security.config';
+import appConfig from '@/common/config/app.config';
+import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { CustomersModule } from '@/modules/customers/customers.module';
+import { DeveloperModule } from '@/modules/developer/developer.module';
+import { AuthModule } from '@/modules/auth/auth.module';
+import { generateApiKey, hashApiKey } from '@/common/utils/crypto.util';
+import { generateTestSessionToken } from '@/common/guards/session.guard';
+import type { SessionUser } from '@/common/decorators/current-user.decorator';
+
+// ─── In-memory store ──────────────────────────────────────────────────────────
+
+class MockPrismaService {
+  customers: Customer[] = [];
+  apiKeys: ApiKey[] = [];
+  memberships: { userId: string; businessId: string; role: string }[] = [];
+
+  private seq = 0;
+  id() { return `oid_${++this.seq}`; }
+
+  readonly customer = {
+    findFirst: jest.fn(async ({ where }: { where: Record<string, unknown> }) =>
+      this.customers.find((c) =>
+        Object.entries(where).every(([k, v]) => (c as Record<string, unknown>)[k] === v),
+      ) ?? null,
+    ),
+    findMany: jest.fn(async ({ where, take, orderBy }: {
+      where?: Record<string, unknown>;
+      take?: number;
+      orderBy?: object[];
+    }) => {
+      let rows = this.customers.filter((c) => {
+        if (!where) return true;
+        return Object.entries(where).every(([k, v]) => {
+          if (k === 'OR') return true; // cursor clause — ignore in mock
+          return (c as Record<string, unknown>)[k] === v;
+        });
+      });
+      rows = rows.slice().sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      if (take) rows = rows.slice(0, take);
+      return rows;
+    }),
+    create: jest.fn(async ({ data }: { data: Partial<Customer> }) => {
+      const c: Customer = {
+        id: this.id(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        paymentCount: 0,
+        lifetimeValue: '0.00',
+        lifetimeValueCurrency: 'USDC',
+        lastPaymentAt: null,
+        email: null,
+        name: null,
+        metadata: {},
+        ...data,
+      } as Customer;
+      this.customers.push(c);
+      return c;
+    }),
+  };
+
+  readonly apiKey = {
+    findMany: jest.fn(async ({ where }: { where: Record<string, unknown> }) =>
+      this.apiKeys.filter((k) =>
+        Object.entries(where).every(([f, v]) => (k as Record<string, unknown>)[f] === v),
+      ),
+    ),
+    findFirst: jest.fn(async ({ where }: { where: Record<string, unknown> }) =>
+      this.apiKeys.find((k) =>
+        Object.entries(where).every(([f, v]) => (k as Record<string, unknown>)[f] === v),
+      ) ?? null,
+    ),
+    update: jest.fn(async ({ where, data }: { where: { id: string }; data: Partial<ApiKey> }) => {
+      const k = this.apiKeys.find((x) => x.id === where.id);
+      if (k) Object.assign(k, data);
+      return k!;
+    }),
+    create: jest.fn(async ({ data }: { data: Partial<ApiKey> }) => {
+      const k = { id: this.id(), createdAt: new Date(), lastUsedAt: null, revokedAt: null, active: true, ...data } as ApiKey;
+      this.apiKeys.push(k);
+      return k;
+    }),
+  };
+
+  readonly membership = {
+    findMany: jest.fn(async ({ where }: { where: { userId: string } }) =>
+      this.memberships.filter((m) => m.userId === where.userId),
+    ),
+  };
+
+  async $connect() {}
+  async $disconnect() {}
+  async $transaction(ops: Promise<unknown>[]) { return Promise.all(ops); }
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const BIZ_A = 'biz_cust_test_A';
+const BIZ_B = 'biz_cust_test_B';
+
+async function seedApiKey(prisma: MockPrismaService, biz = BIZ_A) {
+  const rawKey = generateApiKey('test');
+  const hash = await hashApiKey(rawKey, 4);
+  prisma.apiKeys.push({
+    id: prisma.id(),
+    publicId: `key_${biz}`,
+    businessId: biz,
+    name: 'Test Key',
+    environment: 'test',
+    keyPrefix: 'sk_test_',
+    secretHash: hash,
+    lastFour: rawKey.slice(-4),
+    active: true,
+    lastUsedAt: null,
+    createdAt: new Date(),
+    revokedAt: null,
+  });
+  return rawKey;
+}
+
+function seedCustomer(prisma: MockPrismaService, biz = BIZ_A, overrides: Partial<Customer> = {}): Customer {
+  const c: Customer = {
+    id: prisma.id(),
+    publicId: `cus_${prisma.id()}`,
+    businessId: biz,
+    email: `user${Math.random()}@example.com`,
+    name: 'Test User',
+    metadata: {},
+    paymentCount: 0,
+    lifetimeValue: '0.00',
+    lifetimeValueCurrency: 'USDC',
+    lastPaymentAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  };
+  prisma.customers.push(c);
+  return c;
+}
+
+const ownerSession = (biz = BIZ_A): { Authorization: string } => ({
+  Authorization: `Bearer ${generateTestSessionToken({ userId: 'user_001', businessId: biz, role: 'owner' })}`,
+});
+
+// ─── Test setup ───────────────────────────────────────────────────────────────
+
+describe('Customer API (integration)', () => {
+  let app: INestApplication;
+  let prisma: MockPrismaService;
+  let rawKey: string;
+
+  beforeEach(async () => {
+    prisma = new MockPrismaService();
+    rawKey = await seedApiKey(prisma, BIZ_A);
+
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({
+          isGlobal: true,
+          load: [securityConfig, appConfig],
+          ignoreEnvFile: true,
+        }),
+        CustomersModule,
+        DeveloperModule,
+      ],
+    })
+      .overrideProvider(PrismaService)
+      .useValue(prisma)
+      .compile();
+
+    app = moduleRef.createNestApplication();
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+        transformOptions: { enableImplicitConversion: false },
+      }),
+    );
+    await app.init();
+  });
+
+  afterEach(async () => { if (app) await app.close(); });
+
+  const apiAuth = () => ({ Authorization: `Bearer ${rawKey}` });
+
+  // ─── GET /v1/customers ──────────────────────────────────────────────────────
+
+  describe('GET /v1/customers', () => {
+    it('200 — returns list envelope', async () => {
+      seedCustomer(prisma);
+      const res = await request(app.getHttpServer())
+        .get('/v1/customers')
+        .set(apiAuth())
+        .expect(200);
+
+      expect(res.body.object).toBe('list');
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(typeof res.body.has_more).toBe('boolean');
+      expect(res.body).toHaveProperty('next_cursor');
+    });
+
+    it('200 — each customer has correct shape', async () => {
+      seedCustomer(prisma, BIZ_A, { email: 'alice@example.com', name: 'Alice' });
+
+      const res = await request(app.getHttpServer())
+        .get('/v1/customers')
+        .set(apiAuth())
+        .expect(200);
+
+      const c = res.body.data[0];
+      expect(c.object).toBe('customer');
+      expect(c.id).toMatch(/^cus_/);
+      expect(c).toHaveProperty('email');
+      expect(c).toHaveProperty('payment_count');
+      expect(c).toHaveProperty('lifetime_value');
+      expect(c).not.toHaveProperty('_id');
+    });
+
+    it('200 — empty list when no customers', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/v1/customers')
+        .set(apiAuth())
+        .expect(200);
+
+      expect(res.body.data).toEqual([]);
+      expect(res.body.has_more).toBe(false);
+      expect(res.body.next_cursor).toBeNull();
+    });
+
+    it('400 — limit > 100 rejected', async () => {
+      await request(app.getHttpServer())
+        .get('/v1/customers?limit=101')
+        .set(apiAuth())
+        .expect(400);
+    });
+
+    it('401 — missing API key', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/v1/customers')
+        .expect(401);
+
+      expect(res.body.error.type).toBe('authentication_error');
+    });
+  });
+
+  // ─── GET /v1/customers/:id ─────────────────────────────────────────────────
+
+  describe('GET /v1/customers/:id', () => {
+    it('200 — returns the customer', async () => {
+      const c = seedCustomer(prisma, BIZ_A, { email: 'bob@example.com' });
+
+      const res = await request(app.getHttpServer())
+        .get(`/v1/customers/${c.publicId}`)
+        .set(apiAuth())
+        .expect(200);
+
+      expect(res.body.object).toBe('customer');
+      expect(res.body.id).toBe(c.publicId);
+      expect(res.body.email).toBe('bob@example.com');
+    });
+
+    it('404 — customer not found', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/v1/customers/cus_doesnotexist')
+        .set(apiAuth())
+        .expect(404);
+
+      expect(res.body.error.type).toBe('resource_missing');
+    });
+
+    it('404 — cross-business isolation (BIZ_B customer not visible to BIZ_A key)', async () => {
+      const c = seedCustomer(prisma, BIZ_B); // belongs to a different business
+
+      const res = await request(app.getHttpServer())
+        .get(`/v1/customers/${c.publicId}`)
+        .set(apiAuth()) // BIZ_A key
+        .expect(404);
+
+      expect(res.body.error.type).toBe('resource_missing');
+    });
+
+    it('401 — missing API key', async () => {
+      const c = seedCustomer(prisma);
+      await request(app.getHttpServer())
+        .get(`/v1/customers/${c.publicId}`)
+        .expect(401);
+    });
+  });
+
+  // ─── GET /api/developer/customers ─────────────────────────────────────────
+
+  describe('GET /api/developer/customers', () => {
+    it('200 — returns list via session auth', async () => {
+      seedCustomer(prisma, BIZ_A);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/developer/customers')
+        .set(ownerSession(BIZ_A))
+        .expect(200);
+
+      expect(res.body.object).toBe('list');
+      expect(Array.isArray(res.body.data)).toBe(true);
+    });
+
+    it('200 — empty list when no customers', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/developer/customers')
+        .set(ownerSession(BIZ_A))
+        .expect(200);
+
+      expect(res.body.data).toEqual([]);
+    });
+
+    it('401 — missing session token', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/developer/customers')
+        .expect(401);
+
+      expect(res.body.error.type).toBe('authentication_error');
+    });
+  });
+
+  // ─── GET /api/developer/customers/:id ────────────────────────────────────
+
+  describe('GET /api/developer/customers/:id', () => {
+    it('200 — returns customer via session auth', async () => {
+      const c = seedCustomer(prisma, BIZ_A, { name: 'Dashboard User' });
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/developer/customers/${c.publicId}`)
+        .set(ownerSession(BIZ_A))
+        .expect(200);
+
+      expect(res.body.id).toBe(c.publicId);
+      expect(res.body.name).toBe('Dashboard User');
+    });
+
+    it('404 — customer not found', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/developer/customers/cus_ghost')
+        .set(ownerSession(BIZ_A))
+        .expect(404);
+
+      expect(res.body.error.type).toBe('resource_missing');
+    });
+
+    it('404 — cross-business isolation via session', async () => {
+      const c = seedCustomer(prisma, BIZ_B); // different business
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/developer/customers/${c.publicId}`)
+        .set(ownerSession(BIZ_A)) // BIZ_A session
+        .expect(404);
+
+      expect(res.body.error.type).toBe('resource_missing');
+    });
+
+    it('401 — missing session token', async () => {
+      const c = seedCustomer(prisma);
+      await request(app.getHttpServer())
+        .get(`/api/developer/customers/${c.publicId}`)
+        .expect(401);
+    });
+  });
+});
