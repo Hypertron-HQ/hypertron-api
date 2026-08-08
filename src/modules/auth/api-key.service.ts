@@ -212,4 +212,40 @@ export class ApiKeyService {
   ): Promise<Omit<ApiKey, 'secretHash'>[]> {
     return this.repository.findAllForBusiness(businessId, environment);
   }
+
+  /**
+   * Lists active API keys for the merchant(s) a user belongs to.
+   *
+   * Flow:
+   *  1. Look up Membership rows for userId → businessId(s)
+   *  2. Load ApiKey rows for those businesses
+   *  3. If the user has no memberships yet (local stub sessions), fall back
+   *     to sessionBusinessId when provided
+   *
+   * Never returns secretHash / raw secrets — only metadata for dashboard display.
+   */
+  async listForUserId(
+    userId: string,
+    options?: {
+      environment?: 'test' | 'live';
+      /** Used when Membership is empty (dev stub / pre-onboarding) */
+      fallbackBusinessId?: string;
+    },
+  ): Promise<Omit<ApiKey, 'secretHash'>[]> {
+    let businessIds = await this.repository.findBusinessIdsForUser(userId);
+
+    if (businessIds.length === 0 && options?.fallbackBusinessId) {
+      businessIds = [options.fallbackBusinessId];
+    }
+
+    if (businessIds.length === 0) {
+      this.logger.debug({ userId }, 'No businesses found for user — returning empty key list');
+      return [];
+    }
+
+    return this.repository.findAllForBusinessIds(
+      businessIds,
+      options?.environment,
+    );
+  }
 }

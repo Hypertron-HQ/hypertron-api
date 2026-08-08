@@ -36,11 +36,42 @@ import type { SessionUser } from '@/common/decorators/current-user.decorator';
 
 // ─── In-memory Prisma mock (same pattern as auth integration test) ─────────────
 
+type MembershipRow = {
+  id: string;
+  userId: string;
+  businessId: string;
+  role: string;
+};
+
+function matchesWhere<T extends Record<string, unknown>>(
+  row: T,
+  where: Record<string, unknown>,
+): boolean {
+  return Object.entries(where).every(([field, expected]) => {
+    const actual = row[field];
+    if (
+      expected !== null &&
+      typeof expected === 'object' &&
+      !Array.isArray(expected) &&
+      'in' in (expected as object)
+    ) {
+      const values = (expected as { in: unknown[] }).in;
+      return values.includes(actual);
+    }
+    return actual === expected;
+  });
+}
+
 class MockPrismaService {
   private keys: ApiKey[] = [];
+  private memberships: MembershipRow[] = [];
 
   seed(key: ApiKey) {
     this.keys.push(key);
+  }
+
+  seedMembership(row: MembershipRow) {
+    this.memberships.push(row);
   }
 
   getAll(): ApiKey[] {
@@ -48,14 +79,17 @@ class MockPrismaService {
   }
 
   readonly apiKey = {
-    findMany: async (args: { where: Record<string, unknown> }) => {
+    findMany: async (args: {
+      where: Record<string, unknown>;
+      orderBy?: unknown;
+    }) => {
       return this.keys.filter((k) =>
-        Object.entries(args.where).every(([f, v]) => k[f as keyof ApiKey] === v),
+        matchesWhere(k as unknown as Record<string, unknown>, args.where),
       );
     },
     findFirst: async (args: { where: Record<string, unknown> }) =>
       this.keys.find((k) =>
-        Object.entries(args.where).every(([f, v]) => k[f as keyof ApiKey] === v),
+        matchesWhere(k as unknown as Record<string, unknown>, args.where),
       ) ?? null,
     create: async (args: { data: Omit<ApiKey, 'id'> }) => {
       const data = args.data as ApiKey;
@@ -73,6 +107,21 @@ class MockPrismaService {
       const key = this.keys.find((k) => k.id === args.where.id);
       if (key) Object.assign(key, args.data);
       return key!;
+    },
+  };
+
+  readonly membership = {
+    findMany: async (args: {
+      where: Record<string, unknown>;
+      select?: { businessId?: boolean };
+    }) => {
+      const rows = this.memberships.filter((m) =>
+        matchesWhere(m as unknown as Record<string, unknown>, args.where),
+      );
+      if (args.select?.businessId) {
+        return rows.map((m) => ({ businessId: m.businessId }));
+      }
+      return rows;
     },
   };
 
@@ -248,6 +297,25 @@ describe('/api/developer/api-keys (integration)', () => {
       for (const key of res.body.data) {
         expect(key.id).toMatch(/^key_/);
       }
+    });
+
+    it('200 — resolves merchant via Membership when present', async () => {
+      prisma.seedMembership({
+        id: 'mem_1',
+        userId: OWNER.userId,
+        businessId: 'biz_from_membership',
+        role: 'owner',
+      });
+      await seedKey(prisma, 'biz_from_membership');
+      await seedKey(prisma, OWNER.businessId); // session fallback business — ignored when membership exists
+
+      const res = await request(app.getHttpServer())
+        .get('/api/developer/api-keys')
+        .set(sessionHeader(OWNER))
+        .expect(200);
+
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0].id).toMatch(/^key_/);
     });
 
     it('401 — missing token', async () => {

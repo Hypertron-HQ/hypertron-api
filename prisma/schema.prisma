@@ -42,13 +42,32 @@ enum DeliveryStatus {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Membership — read model shared with hypertron-core-backend (same Mongo DB)
+// Used to resolve userId → businessId(s). Do not write from this service.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Membership {
+  id         String   @id @default(cuid()) @map("_id")
+  userId     String
+  businessId String
+  role       String   @default("owner")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userId, businessId])
+  @@index([businessId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ApiKey — merchant API credentials
+// businessId matches core-backend Business.id (cuid string, not ObjectId)
 // ─────────────────────────────────────────────────────────────────────────────
 
 model ApiKey {
   id          String      @id @default(auto()) @map("_id") @db.ObjectId
   publicId    String      @unique               // key_01J... (returned to client)
-  businessId  String      @db.ObjectId
+  businessId  String                            // Business.id from core-backend
   name        String
   environment Environment
   keyPrefix   String                            // "sk_test_" or "sk_live_"
