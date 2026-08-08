@@ -13,6 +13,7 @@ import { PrismaModule } from './infrastructure/prisma/prisma.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { DeveloperModule } from './modules/developer/developer.module';
+import { PaymentsModule } from './modules/payments/payments.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { DeveloperModule } from './modules/developer/developer.module';
     HealthModule,
     AuthModule,
     DeveloperModule,
+    PaymentsModule,
   ],
 })
 export class AppModule {}
