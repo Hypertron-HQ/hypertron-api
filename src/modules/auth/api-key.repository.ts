@@ -47,12 +47,25 @@ export class ApiKeyRepository {
     businessId: string,
     environment?: 'test' | 'live',
   ): Promise<Omit<ApiKey, 'secretHash'>[]> {
+    return this.findAllForBusinessIds([businessId], environment);
+  }
+
+  /**
+   * Finds all active keys for one or more businesses.
+   * Never returns secretHash.
+   */
+  async findAllForBusinessIds(
+    businessIds: string[],
+    environment?: 'test' | 'live',
+  ): Promise<Omit<ApiKey, 'secretHash'>[]> {
+    if (businessIds.length === 0) return [];
+
     const where: {
-      businessId: string;
+      businessId: { in: string[] };
       active: boolean;
       environment?: 'test' | 'live';
     } = {
-      businessId,
+      businessId: { in: businessIds },
       active: true,
     };
     if (environment) where.environment = environment;
@@ -62,8 +75,18 @@ export class ApiKeyRepository {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Strip secretHash before returning
     return keys.map(({ secretHash: _hash, ...rest }) => rest);
+  }
+
+  /**
+   * Resolves business IDs for a core-backend AppUser via Membership.
+   */
+  async findBusinessIdsForUser(userId: string): Promise<string[]> {
+    const memberships = await this.prisma.membership.findMany({
+      where: { userId },
+      select: { businessId: true },
+    });
+    return [...new Set(memberships.map((m) => m.businessId))];
   }
 
   /** Finds a single key by its publicId, scoped to a businessId. */

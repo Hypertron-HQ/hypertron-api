@@ -61,12 +61,15 @@ export class ApiKeysController {
   @ApiOperation({
     summary: 'List API keys',
     description:
-      'Returns all active API keys for the authenticated business. ' +
+      'Returns all active API keys for the merchant(s) the authenticated user ' +
+      'belongs to (resolved via Membership / businessId). ' +
       'secret_key is always null in list responses.',
   })
   @ApiResponse({ status: 200, type: ApiKeyListResponseDto })
   async list(@CurrentUser() user: SessionUser): Promise<ApiKeyListResponseDto> {
-    const keys = await this.apiKeyService.listForBusiness(user.businessId);
+    const keys = await this.apiKeyService.listForUserId(user.userId, {
+      fallbackBusinessId: user.businessId,
+    });
     return toApiKeyListResponse(keys);
   }
 
