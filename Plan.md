@@ -1401,17 +1401,17 @@ Each phase has a clear definition of done and can be merged and deployed indepen
 
 ### Phase 4 — Payments CRUD (Day 5–8)
 
-- [ ] Implement `IdempotencyModule` with Redis-backed compare-and-set
-- [ ] Implement `CustomersModule` with upsert-by-email logic
-- [ ] Implement `EventsModule` (append-only, immutable snapshots)
-- [ ] Implement `PaymentStateMachine` with all seven transitions
-- [ ] Implement `POST /v1/payments` (full 12-step flow from spec section 7.1)
-- [ ] Implement `GET /v1/payments/:id`
-- [ ] Implement `GET /v1/payments` with cursor pagination
-- [ ] Implement `POST /v1/payments/:id/cancel`
-- [ ] Implement `GET /v1/payments/:id/events`
-- [ ] Integration tests for all CRUD operations, pagination, cross-merchant isolation
-- [ ] Verify: idempotency key replay returns identical response
+- [x] Implement `IdempotencyModule` with Redis-backed compare-and-set
+- [x] Implement `CustomersModule` with upsert-by-email logic
+- [x] Implement `EventsModule` (append-only, immutable snapshots)
+- [x] Implement `PaymentStateMachine` with all seven transitions
+- [x] Implement `POST /v1/payments` (full 12-step flow from spec section 7.1)
+- [x] Implement `GET /v1/payments/:id`
+- [x] Implement `GET /v1/payments` with cursor pagination
+- [x] Implement `POST /v1/payments/:id/cancel`
+- [x] Implement `GET /v1/payments/:id/events`
+- [x] Integration tests for all CRUD operations, pagination, cross-merchant isolation
+- [x] Verify: idempotency key replay returns identical response
 
 ### Phase 5 — Customer API (Day 8–9)
 
