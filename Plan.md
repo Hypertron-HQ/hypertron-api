@@ -1415,10 +1415,10 @@ Each phase has a clear definition of done and can be merged and deployed indepen
 
 ### Phase 5 — Customer API (Day 8–9)
 
-- [ ] Implement `GET /v1/customers`
-- [ ] Implement `GET /v1/customers/:id`
-- [ ] Implement `GET /api/developer/customers` (dashboard)
-- [ ] Integration tests for customer API
+- [x] Implement `GET /v1/customers`
+- [x] Implement `GET /v1/customers/:id`
+- [x] Implement `GET /api/developer/customers` (dashboard)
+- [x] Integration tests for customer API
 
 ### Phase 6 — Blockchain reconciliation (Day 9–12)
 
