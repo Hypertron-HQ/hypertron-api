@@ -47,19 +47,46 @@ class MockPrismaService {
         Object.entries(where).every(([k, v]) => (c as Record<string, unknown>)[k] === v),
       ) ?? null,
     ),
-    findMany: jest.fn(async ({ where, take, orderBy }: {
-      where?: Record<string, unknown>;
+    findMany: jest.fn(async ({ where, take }: {
+      where?: Record<string, unknown> & { OR?: Array<Record<string, unknown>> };
       take?: number;
       orderBy?: object[];
     }) => {
       let rows = this.customers.filter((c) => {
         if (!where) return true;
+        if (where.businessId && c.businessId !== where.businessId) return false;
+        if (where.OR?.length) {
+          return where.OR.some((clause) => {
+            const createdAt = clause.createdAt as Date | { lt?: Date } | undefined;
+            if (
+              createdAt &&
+              typeof createdAt === 'object' &&
+              !(createdAt instanceof Date) &&
+              createdAt.lt
+            ) {
+              return c.createdAt.getTime() < createdAt.lt.getTime();
+            }
+            if (createdAt instanceof Date && typeof clause.id === 'object') {
+              const idClause = clause.id as { lt?: string };
+              return (
+                c.createdAt.getTime() === createdAt.getTime() &&
+                !!idClause.lt &&
+                c.id < idClause.lt
+              );
+            }
+            return false;
+          });
+        }
         return Object.entries(where).every(([k, v]) => {
-          if (k === 'OR') return true; // cursor clause — ignore in mock
+          if (k === 'OR') return true;
           return (c as Record<string, unknown>)[k] === v;
         });
       });
-      rows = rows.slice().sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      rows = rows.slice().sort((a, b) => {
+        const byTime = b.createdAt.getTime() - a.createdAt.getTime();
+        if (byTime !== 0) return byTime;
+        return b.id < a.id ? -1 : b.id > a.id ? 1 : 0;
+      });
       if (take) rows = rows.slice(0, take);
       return rows;
     }),
@@ -256,6 +283,39 @@ describe('Customer API (integration)', () => {
         .get('/v1/customers?limit=101')
         .set(apiAuth())
         .expect(400);
+    });
+
+    it('200 — has_more=true and cursor returns remaining page', async () => {
+      const base = Date.now();
+      for (let i = 0; i < 3; i++) {
+        seedCustomer(prisma, BIZ_A, {
+          publicId: `cus_page_${i}`,
+          email: `page${i}@example.com`,
+          createdAt: new Date(base - i * 1000),
+        });
+      }
+
+      const page1 = await request(app.getHttpServer())
+        .get('/v1/customers?limit=2')
+        .set(apiAuth())
+        .expect(200);
+
+      expect(page1.body.data).toHaveLength(2);
+      expect(page1.body.has_more).toBe(true);
+      expect(page1.body.next_cursor).toEqual(expect.any(String));
+
+      const page2 = await request(app.getHttpServer())
+        .get(`/v1/customers?limit=2&cursor=${encodeURIComponent(page1.body.next_cursor)}`)
+        .set(apiAuth())
+        .expect(200);
+
+      expect(page2.body.data).toHaveLength(1);
+      expect(page2.body.has_more).toBe(false);
+      expect(page2.body.next_cursor).toBeNull();
+
+      const page1Ids = page1.body.data.map((c: { id: string }) => c.id);
+      const page2Ids = page2.body.data.map((c: { id: string }) => c.id);
+      expect(page1Ids).not.toEqual(expect.arrayContaining(page2Ids));
     });
 
     it('401 — missing API key', async () => {
