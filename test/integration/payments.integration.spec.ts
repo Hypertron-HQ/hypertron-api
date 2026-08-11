@@ -431,10 +431,9 @@ describe('/v1/payments (integration)', () => {
     prisma.store.businesses.push({
       id: BIZ_ID,
       walletAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
-      receiveAddress: 'GCEZWKCA5VLDNRLN3RPRJMRZOX3Z6G5CHCGZFOZ3GJJKM9MST9LNKLY',
+      // Classic G… destination (56 chars) — never pool C…
+      receiveAddress: 'GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H',
     });
-    process.env.PAYMENT_POOL_ADDRESS =
-      'CBNJY2ULVHOSHCTA4ZBMCU7AEVZHK4J5D3UEWIRSUYTIAQXZNTYQAMJQ';
     const seeded = await seedApiKey(prisma, {
       env: 'test',
       businessId: BIZ_ID,

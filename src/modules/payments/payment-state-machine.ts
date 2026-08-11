@@ -74,6 +74,8 @@ export class PaymentStateMachine {
       paymentInternalId,
       fromStates: ALLOWED_FROM.confirmed,
       toStatus: PaymentStatus.confirmed,
+      // Compare-and-set: only claim the tx hash while still unset (Plan §12.3)
+      whereExtra: { transactionHash: null },
       extraData: {
         transactionHash: tx.transactionHash,
         payerAddress: tx.payerAddress,
@@ -144,8 +146,16 @@ export class PaymentStateMachine {
     toStatus: PaymentStatus;
     extraData: Partial<Payment>;
     eventType: string;
+    whereExtra?: Record<string, unknown>;
   }): Promise<Payment> {
-    const { paymentInternalId, fromStates, toStatus, extraData, eventType } = params;
+    const {
+      paymentInternalId,
+      fromStates,
+      toStatus,
+      extraData,
+      eventType,
+      whereExtra,
+    } = params;
 
     // 1. Load current payment to check state
     const current = await this.prisma.payment.findUnique({
@@ -162,7 +172,11 @@ export class PaymentStateMachine {
 
     // 2. Atomic compare-and-set — only update if still in an allowed from-state
     const result = await this.prisma.payment.updateMany({
-      where: { id: paymentInternalId, status: { in: fromStates } },
+      where: {
+        id: paymentInternalId,
+        status: { in: fromStates },
+        ...(whereExtra ?? {}),
+      },
       data: { status: toStatus, ...(extraData as object) },
     });
 

@@ -104,7 +104,7 @@ export class PaymentsService {
       if (!destinationAddress) {
         throw new InvalidRequestException(
           'payment_destination_unconfigured',
-          'No payment destination configured. Set Business.receiveAddress or PAYMENT_POOL_ADDRESS.',
+          'No classic payment destination configured. Set Business.receiveAddress to a G… wallet.',
         );
       }
 
@@ -249,6 +249,10 @@ export class PaymentsService {
 
   // ─── Helpers ────────────────────────────────────────────────────────────────
 
+  /**
+   * Classic checkout destination: merchant G… only (never pool C…).
+   * Prefer Business.receiveAddress, then env STELLAR_*_DESTINATION_ADDRESS.
+   */
   private async resolveDestinationAddress(
     businessId: string,
     environment: string,
@@ -263,12 +267,15 @@ export class PaymentsService {
         ? stellar?.mainnetDestinationAddress
         : stellar?.testnetDestinationAddress;
 
-    return (
-      business?.receiveAddress?.trim() ||
-      stellar?.paymentPoolAddress?.trim() ||
-      envDestination?.trim() ||
-      ''
-    );
+    const candidates = [
+      business?.receiveAddress?.trim(),
+      envDestination?.trim(),
+    ];
+
+    for (const addr of candidates) {
+      if (addr && isClassicStellarAddress(addr)) return addr;
+    }
+    return '';
   }
 
   private async createUniqueLinkMemo(): Promise<string> {
@@ -285,4 +292,9 @@ export class PaymentsService {
       'Could not allocate a unique payment memo. Retry the request.',
     );
   }
+}
+
+/** Classic Stellar account public key (G…, 56 chars) — never contract C…. */
+function isClassicStellarAddress(address: string): boolean {
+  return address.startsWith('G') && address.length === 56;
 }
