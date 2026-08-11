@@ -363,7 +363,7 @@ Response:
 
 ## 8. Dashboard control-plane API
 
-These endpoints use the existing Hypertron wallet/Privy session cookies and RBAC membership. They are not authenticated with a merchant secret key.
+These endpoints use the Freighter `ht_dashboard` session cookie (HMAC `AUTH_SECRET`, shared with hypertron-core-backend). They are not authenticated with a merchant secret key.
 
 Recommended route prefix: `/api/developer`.
 

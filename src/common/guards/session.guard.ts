@@ -1,18 +1,8 @@
 /**
- * SessionGuard — authenticates all /api/developer/* routes via session token.
+ * SessionGuard — authenticates /api/developer/* via Freighter ht_dashboard cookie.
  *
- * Token format: `Bearer <base64url-encoded JSON payload>`
- *
- * In production this delegates to Privy's JWT verification. For now it
- * validates a signed token containing `{ userId, businessId, role }`.
- *
- * The token is expected in the `Authorization: Bearer <token>` header.
- * Attaches `{ userId, businessId, role }` to `request.user`.
- *
- * Design notes (spec section 9.3):
- *  - Privy integration is a drop-in replacement — swap `validateToken()` only
- *  - Missing/invalid token → 401 authentication_error
- *  - The guard itself does NOT check roles — that is RolesGuard's job
+ * Cookie is HMAC-signed with AUTH_SECRET (shared with hypertron-core-backend).
+ * Resolves walletAddress → Business.id and attaches SessionUser to the request.
  */
 
 import {
@@ -24,98 +14,94 @@ import {
 import { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
 
+import {
+  createDashboardSessionToken,
+  DASHBOARD_SESSION_COOKIE,
+  parseDashboardWalletFromCookieHeader,
+} from '@/common/auth/dashboard-session';
 import { AuthenticationException } from '@/common/exceptions/hypertron.exception';
 import {
   SESSION_USER_KEY,
   type SessionUser,
 } from '@/common/decorators/current-user.decorator';
+import type { SecurityConfig } from '@/common/config/security.config';
+import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 
 @Injectable()
 export class SessionGuard implements CanActivate {
   private readonly logger = new Logger(SessionGuard.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context
       .switchToHttp()
       .getRequest<Request & { [SESSION_USER_KEY]: SessionUser }>();
 
-    const token = this.extractBearerToken(request);
-
-    if (!token) {
+    const secret =
+      this.config.get<SecurityConfig>('security')?.authSecret?.trim() ?? '';
+    if (!secret) {
       throw new AuthenticationException(
-        'missing_session_token',
-        'No session token provided. Include your token in the Authorization header.',
+        'server_misconfigured',
+        'AUTH_SECRET is not configured.',
       );
     }
 
-    const user = await this.validateToken(token);
+    const cookieHeader = request.headers.cookie;
+    const hasDashboardCookie = Boolean(
+      cookieHeader
+        ?.split(';')
+        .some((entry) => entry.trim().startsWith(`${DASHBOARD_SESSION_COOKIE}=`)),
+    );
 
-    if (!user) {
-      this.logger.warn('Session token validation failed');
+    const walletAddress = parseDashboardWalletFromCookieHeader(
+      cookieHeader,
+      secret,
+    );
+
+    if (!walletAddress) {
+      throw new AuthenticationException(
+        hasDashboardCookie ? 'invalid_session_token' : 'missing_session_token',
+        hasDashboardCookie
+          ? 'The Freighter session cookie is invalid or has expired.'
+          : 'No Freighter session cookie. Sign in with Freighter on the dashboard first.',
+      );
+    }
+
+    const business = await this.prisma.business.findUnique({
+      where: { walletAddress },
+      select: { id: true },
+    });
+
+    if (!business) {
+      this.logger.warn({ walletAddress }, 'No Business for wallet session');
       throw new AuthenticationException(
         'invalid_session_token',
-        'The session token is invalid or has expired.',
+        'No merchant workspace for this wallet. Complete Freighter sign-in on the core app first.',
       );
     }
 
-    request[SESSION_USER_KEY] = user;
+    request[SESSION_USER_KEY] = {
+      walletAddress,
+      businessId: business.id,
+      role: 'owner',
+    };
     return true;
-  }
-
-  /**
-   * Validates the bearer token and extracts session user context.
-   *
-   * Current implementation: decodes a base64url JSON payload.
-   * This is intentionally simple for development — swap for Privy JWT
-   * verification in production by replacing this method only.
-   *
-   * A production implementation would:
-   *  1. Verify the JWT signature against Privy's JWKS endpoint
-   *  2. Check `exp` / `iat` claims
-   *  3. Extract `userId` from the Privy `sub` claim
-   *  4. Resolve `businessId` and `role` from the database
-   */
-  private async validateToken(token: string): Promise<SessionUser | null> {
-    try {
-      // Decode base64url-encoded JSON payload
-      const json = Buffer.from(token, 'base64url').toString('utf8');
-      const payload = JSON.parse(json) as Partial<SessionUser>;
-
-      if (
-        typeof payload.userId !== 'string' ||
-        typeof payload.businessId !== 'string' ||
-        (payload.role !== 'owner' &&
-          payload.role !== 'admin' &&
-          payload.role !== 'viewer')
-      ) {
-        return null;
-      }
-
-      return {
-        userId: payload.userId,
-        businessId: payload.businessId,
-        role: payload.role,
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  private extractBearerToken(request: Request): string | null {
-    const authHeader = request.headers['authorization'];
-    if (!authHeader || typeof authHeader !== 'string') return null;
-    const [scheme, token] = authHeader.split(' ');
-    if (scheme?.toLowerCase() !== 'bearer' || !token?.trim()) return null;
-    return token.trim();
   }
 }
 
 /**
- * Generates a test session token for use in tests and local development.
- * Never use this in production — it produces unsigned tokens.
+ * Test helper: mint a signed ht_dashboard cookie value (not a Bearer token).
  */
-export function generateTestSessionToken(user: SessionUser): string {
-  return Buffer.from(JSON.stringify(user), 'utf8').toString('base64url');
+export function generateTestSessionCookie(
+  walletAddress: string,
+  secret: string,
+): string {
+  return createDashboardSessionToken(walletAddress, secret);
 }
+
+/** @deprecated Use generateTestSessionCookie — kept name alias for migrations */
+export const generateTestSessionToken = generateTestSessionCookie;

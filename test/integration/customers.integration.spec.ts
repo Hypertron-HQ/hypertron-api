@@ -28,15 +28,18 @@ import { CustomersModule } from '@/modules/customers/customers.module';
 import { DeveloperModule } from '@/modules/developer/developer.module';
 import { AuthModule } from '@/modules/auth/auth.module';
 import { generateApiKey, hashApiKey } from '@/common/utils/crypto.util';
-import { generateTestSessionToken } from '@/common/guards/session.guard';
-import type { SessionUser } from '@/common/decorators/current-user.decorator';
+import { generateTestSessionCookie } from '@/common/guards/session.guard';
+import { DASHBOARD_SESSION_COOKIE } from '@/common/auth/dashboard-session';
 
 // ─── In-memory store ──────────────────────────────────────────────────────────
 
 class MockPrismaService {
   customers: Customer[] = [];
   apiKeys: ApiKey[] = [];
-  memberships: { userId: string; businessId: string; role: string }[] = [];
+  businesses: { id: string; walletAddress: string }[] = [
+    { id: 'biz_cust_test_A', walletAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF' },
+    { id: 'biz_cust_test_B', walletAddress: 'GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBWHF' },
+  ];
 
   private seq = 0;
   id() { return `oid_${++this.seq}`; }
@@ -132,10 +135,14 @@ class MockPrismaService {
     }),
   };
 
-  readonly membership = {
-    findMany: jest.fn(async ({ where }: { where: { userId: string } }) =>
-      this.memberships.filter((m) => m.userId === where.userId),
-    ),
+  readonly business = {
+    findUnique: jest.fn(async ({ where }: { where: { walletAddress?: string; id?: string }; select?: { id?: boolean } }) => {
+      const row = this.businesses.find((b) =>
+        where.walletAddress ? b.walletAddress === where.walletAddress : b.id === where.id,
+      );
+      if (!row) return null;
+      return { id: row.id };
+    }),
   };
 
   async $connect() {}
@@ -188,9 +195,16 @@ function seedCustomer(prisma: MockPrismaService, biz = BIZ_A, overrides: Partial
   return c;
 }
 
-const ownerSession = (biz = BIZ_A): { Authorization: string } => ({
-  Authorization: `Bearer ${generateTestSessionToken({ userId: 'user_001', businessId: biz, role: 'owner' })}`,
-});
+const WALLET_A = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
+const WALLET_B = 'GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBWHF';
+const AUTH_SECRET = 'test-auth-secret-for-integration';
+
+const ownerSession = (biz = BIZ_A): { Cookie: string } => {
+  const wallet = biz === BIZ_B ? WALLET_B : WALLET_A;
+  const token = generateTestSessionCookie(wallet, AUTH_SECRET);
+  return { Cookie: `${DASHBOARD_SESSION_COOKIE}=${token}` };
+};
+
 
 // ─── Test setup ───────────────────────────────────────────────────────────────
 
@@ -201,6 +215,7 @@ describe('Customer API (integration)', () => {
 
   beforeEach(async () => {
     prisma = new MockPrismaService();
+    process.env.AUTH_SECRET = AUTH_SECRET;
     rawKey = await seedApiKey(prisma, BIZ_A);
 
     const moduleRef: TestingModule = await Test.createTestingModule({

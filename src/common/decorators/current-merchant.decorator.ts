@@ -15,7 +15,7 @@ import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 import type { Request } from 'express';
 
 export interface MerchantContext {
-  /** MongoDB ObjectId string of the business */
+  /** Core Business.id (cuid string) */
   businessId: string;
   /** Resolved from the API key — 'test' or 'live' */
   environment: 'test' | 'live';

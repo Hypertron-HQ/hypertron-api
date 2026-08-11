@@ -82,9 +82,15 @@ async function bootstrap(): Promise<void> {
         { type: 'http', scheme: 'bearer', bearerFormat: 'sk_test_... / sk_live_...' },
         'ApiKey',
       )
-      .addBearerAuth(
-        { type: 'http', scheme: 'bearer', bearerFormat: 'base64url JSON session token' },
-        'SessionToken',
+      .addApiKey(
+        {
+          type: 'apiKey',
+          in: 'cookie',
+          name: 'ht_dashboard',
+          description:
+            'Freighter session cookie from hypertron-core-backend (HMAC AUTH_SECRET)',
+        },
+        'SessionCookie',
       )
       .addTag('Payments', 'Create, read, list, and cancel payments')
       .addTag('Customers', 'Merchant-scoped customer records')

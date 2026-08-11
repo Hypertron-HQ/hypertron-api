@@ -32,7 +32,7 @@ import {
 } from '@/modules/customers/dto/customer-response.dto';
 
 @ApiTags('Developer')
-@ApiBearerAuth('SessionToken')
+@ApiBearerAuth('SessionCookie')
 @Controller('api/developer/customers')
 @UseGuards(SessionGuard, RolesGuard)
 export class DeveloperCustomersController {

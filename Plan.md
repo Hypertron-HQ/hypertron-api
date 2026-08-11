@@ -44,7 +44,7 @@ The system has two distinct authentication planes:
 | Plane | Auth mechanism | Route prefix |
 |-------|---------------|--------------|
 | **Public Payments API** | Bearer secret API key (`sk_test_*` / `sk_live_*`) | `/v1/*` |
-| **Dashboard Control-Plane** | Existing Privy/wallet session cookies + RBAC | `/api/developer/*` |
+| **Dashboard Control-Plane** | Freighter `ht_dashboard` cookie (shared AUTH_SECRET with core) | `/api/developer/*` |
 
 Core functional responsibilities:
 
@@ -64,7 +64,7 @@ Core functional responsibilities:
 - **Single NestJS application** with both the HTTP server and background workers. Workers run in the same process using BullMQ processors, or can be extracted to a separate process for scaling.
 - **Monorepo-adjacent layout** — the `hypertron-api` repo is self-contained but designed to eventually be consumed as a workspace package.
 - **No shared mutable state in the gateway** — all state lives in MongoDB. Worker idempotency is enforced via atomic database operations.
-- **Dual-plane routing** — `/v1/*` routes are authenticated via `ApiKeyGuard`; `/api/developer/*` routes are authenticated via the existing Privy session guard.
+- **Dual-plane routing** — `/v1/*` routes are authenticated via `ApiKeyGuard`; `/api/developer/*` routes use Freighter `ht_dashboard` cookie auth (shared with core).
 
 ---
 

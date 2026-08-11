@@ -40,6 +40,7 @@ import { PaymentStatus } from '@prisma/client';
 
 import securityConfig from '@/common/config/security.config';
 import appConfig from '@/common/config/app.config';
+import stellarConfig from '@/common/config/stellar.config';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { PaymentsModule } from '@/modules/payments/payments.module';
 import { generateApiKey, hashApiKey } from '@/common/utils/crypto.util';
@@ -53,6 +54,20 @@ class InMemoryStore {
   customers: Customer[] = [];
   apiKeys: ApiKey[] = [];
   idempotency: IdempotencyRecord[] = [];
+  businesses: { id: string; walletAddress: string; receiveAddress: string | null }[] = [];
+  paymentLinks: {
+    id: string;
+    businessId: string;
+    amount: string | null;
+    currency: string;
+    purpose: string | null;
+    metadata: string | null;
+    paymentMethods: string[];
+    expiresAt: Date | null;
+    linkMemo: string;
+    destinationAddress: string;
+    createdAt: Date;
+  }[] = [];
 
   private nextId = 0;
   genId() { return `oid_${++this.nextId}`; }
@@ -263,6 +278,54 @@ class MockPrismaService {
     }),
   };
 
+  readonly business = {
+    findUnique: jest.fn(async ({
+      where,
+      select,
+    }: {
+      where: { id?: string; walletAddress?: string };
+      select?: { receiveAddress?: boolean; id?: boolean };
+    }) => {
+      const row = this.store.businesses.find((b) =>
+        where.id ? b.id === where.id : b.walletAddress === where.walletAddress,
+      );
+      if (!row) return null;
+      if (select?.receiveAddress) {
+        return { receiveAddress: row.receiveAddress };
+      }
+      return { id: row.id, receiveAddress: row.receiveAddress };
+    }),
+  };
+
+  readonly paymentLink = {
+    findUnique: jest.fn(async ({
+      where,
+      select,
+    }: {
+      where: { linkMemo?: string; id?: string };
+      select?: { id?: boolean };
+    }) => {
+      const row = this.store.paymentLinks.find((l) =>
+        where.linkMemo ? l.linkMemo === where.linkMemo : l.id === where.id,
+      );
+      if (!row) return null;
+      return select?.id ? { id: row.id } : row;
+    }),
+    create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+      const link = {
+        id: `pl_${this.store.genId()}`,
+        createdAt: new Date(),
+        purpose: null,
+        metadata: null,
+        paymentMethods: ['wallet', 'qr'],
+        expiresAt: null,
+        ...data,
+      } as InMemoryStore['paymentLinks'][number];
+      this.store.paymentLinks.push(link);
+      return link;
+    }),
+  };
+
   async $connect() {}
   async $disconnect() {}
   async $transaction(ops: Promise<unknown>[]) { return Promise.all(ops); }
@@ -365,6 +428,13 @@ describe('/v1/payments (integration)', () => {
 
   beforeEach(async () => {
     prisma = new MockPrismaService();
+    prisma.store.businesses.push({
+      id: BIZ_ID,
+      walletAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+      receiveAddress: 'GCEZWKCA5VLDNRLN3RPRJMRZOX3Z6G5CHCGZFOZ3GJJKM9MST9LNKLY',
+    });
+    process.env.PAYMENT_POOL_ADDRESS =
+      'CBNJY2ULVHOSHCTA4ZBMCU7AEVZHK4J5D3UEWIRSUYTIAQXZNTYQAMJQ';
     const seeded = await seedApiKey(prisma, {
       env: 'test',
       businessId: BIZ_ID,
@@ -377,7 +447,7 @@ describe('/v1/payments (integration)', () => {
       imports: [
         ConfigModule.forRoot({
           isGlobal: true,
-          load: [securityConfig, appConfig],
+          load: [securityConfig, appConfig, stellarConfig],
           ignoreEnvFile: true,
         }),
         PaymentsModule,

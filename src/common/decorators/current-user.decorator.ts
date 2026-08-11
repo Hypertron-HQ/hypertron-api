@@ -1,12 +1,8 @@
 /**
  * @CurrentUser() parameter decorator.
  *
- * Extracts the session user context attached to the request by `SessionGuard`.
- * Provides `{ userId, businessId, role }`.
- *
- * Usage:
- *   @Get()
- *   list(@CurrentUser() user: SessionUser) { ... }
+ * Extracts the Freighter session user attached by `SessionGuard`.
+ * Provides `{ walletAddress, businessId, role }`.
  */
 
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
@@ -15,11 +11,11 @@ import type { Request } from 'express';
 export type UserRole = 'owner' | 'admin' | 'viewer';
 
 export interface SessionUser {
-  /** Privy DID or internal user ID */
-  userId: string;
-  /** Business (merchant) this user belongs to */
+  /** Stellar G-address from Freighter ht_dashboard cookie */
+  walletAddress: string;
+  /** Core Business.id (cuid) for this wallet */
   businessId: string;
-  /** RBAC role within the business */
+  /** RBAC role within the business (owner for Freighter v1) */
   role: UserRole;
 }
 

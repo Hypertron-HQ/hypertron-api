@@ -28,12 +28,18 @@ export const configValidationSchema = Joi.object({
   STELLAR_MAINNET_HORIZON_URL: Joi.string()
     .uri()
     .default('https://horizon.stellar.org'),
-  STELLAR_TESTNET_DESTINATION_SECRET: Joi.string().default(''),
-  STELLAR_MAINNET_DESTINATION_SECRET: Joi.string().default(''),
+  PAYMENT_POOL_ADDRESS: Joi.string().default(''),
+  STELLAR_TESTNET_DESTINATION_ADDRESS: Joi.string().default(''),
+  STELLAR_MAINNET_DESTINATION_ADDRESS: Joi.string().default(''),
 
   // ── Security ──────────────────────────────────────────────────────────────
+  AUTH_SECRET: Joi.string().min(16).when('NODE_ENV', {
+    is: 'production',
+    then: Joi.required(),
+    otherwise: Joi.string().default('dev-auth-secret-change-me-32b'),
+  }),
   API_KEY_SALT_ROUNDS: Joi.number().integer().min(10).max(14).default(12),
-    WEBHOOK_SECRET_ENCRYPTION_KEY: Joi.string()
+  WEBHOOK_SECRET_ENCRYPTION_KEY: Joi.string()
     .pattern(/^[0-9a-f]{64}$/)
     .when('NODE_ENV', {
       is: 'production',

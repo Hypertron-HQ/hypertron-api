@@ -40,7 +40,6 @@ const mockRepo: jest.Mocked<ApiKeyRepository> = {
   findActiveByPrefix: jest.fn(),
   findAllForBusiness: jest.fn(),
   findAllForBusinessIds: jest.fn(),
-  findBusinessIdsForUser: jest.fn(),
   findByPublicId: jest.fn(),
   create: jest.fn(),
   revoke: jest.fn(),
@@ -343,78 +342,6 @@ describe('ApiKeyService', () => {
       const result = await service.listForBusiness('biz_999');
 
       expect(result).toEqual([]);
-    });
-  });
-
-  // ─── listForUserId() ──────────────────────────────────────────────────────
-
-  describe('listForUserId()', () => {
-    it('loads keys for businesses resolved from Membership', async () => {
-      const { secretHash: _s, ...safeKey } = buildApiKey({ businessId: 'biz_from_membership' });
-      mockRepo.findBusinessIdsForUser.mockResolvedValue(['biz_from_membership']);
-      mockRepo.findAllForBusinessIds.mockResolvedValue([safeKey]);
-
-      const result = await service.listForUserId('user_001');
-
-      expect(mockRepo.findBusinessIdsForUser).toHaveBeenCalledWith('user_001');
-      expect(mockRepo.findAllForBusinessIds).toHaveBeenCalledWith(
-        ['biz_from_membership'],
-        undefined,
-      );
-      expect(result).toHaveLength(1);
-      expect(result[0].businessId).toBe('biz_from_membership');
-      expect(result[0]).not.toHaveProperty('secretHash');
-    });
-
-    it('falls back to session businessId when Membership is empty', async () => {
-      const { secretHash: _s, ...safeKey } = buildApiKey({ businessId: 'biz_fallback' });
-      mockRepo.findBusinessIdsForUser.mockResolvedValue([]);
-      mockRepo.findAllForBusinessIds.mockResolvedValue([safeKey]);
-
-      const result = await service.listForUserId('user_stub', {
-        fallbackBusinessId: 'biz_fallback',
-      });
-
-      expect(mockRepo.findAllForBusinessIds).toHaveBeenCalledWith(
-        ['biz_fallback'],
-        undefined,
-      );
-      expect(result).toHaveLength(1);
-    });
-
-    it('returns empty array when no memberships and no fallback', async () => {
-      mockRepo.findBusinessIdsForUser.mockResolvedValue([]);
-
-      const result = await service.listForUserId('user_orphan');
-
-      expect(result).toEqual([]);
-      expect(mockRepo.findAllForBusinessIds).not.toHaveBeenCalled();
-    });
-
-    it('passes environment filter through to the repository', async () => {
-      mockRepo.findBusinessIdsForUser.mockResolvedValue(['biz_001']);
-      mockRepo.findAllForBusinessIds.mockResolvedValue([]);
-
-      await service.listForUserId('user_001', { environment: 'live' });
-
-      expect(mockRepo.findAllForBusinessIds).toHaveBeenCalledWith(
-        ['biz_001'],
-        'live',
-      );
-    });
-
-    it('does not use fallback when Membership already returns businesses', async () => {
-      mockRepo.findBusinessIdsForUser.mockResolvedValue(['biz_primary']);
-      mockRepo.findAllForBusinessIds.mockResolvedValue([]);
-
-      await service.listForUserId('user_001', {
-        fallbackBusinessId: 'biz_should_not_use',
-      });
-
-      expect(mockRepo.findAllForBusinessIds).toHaveBeenCalledWith(
-        ['biz_primary'],
-        undefined,
-      );
     });
   });
 });
