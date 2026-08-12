@@ -10,11 +10,14 @@ import stellarConfig from './common/config/stellar.config';
 import securityConfig from './common/config/security.config';
 
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
+import { QueueModule } from './infrastructure/queue/queue.module';
+import { StellarModule } from './infrastructure/stellar/stellar.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { DeveloperModule } from './modules/developer/developer.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { CustomersModule } from './modules/customers/customers.module';
+import { ReconcilerModule } from './modules/reconciler/reconciler.module';
 
 @Module({
   imports: [
@@ -46,6 +49,8 @@ import { CustomersModule } from './modules/customers/customers.module';
 
     // ── Infrastructure ─────────────────────────────────────────────────────
     PrismaModule,
+    QueueModule,
+    StellarModule,
 
     // ── Feature modules ────────────────────────────────────────────────────
     HealthModule,
@@ -53,6 +58,7 @@ import { CustomersModule } from './modules/customers/customers.module';
     CustomersModule,
     DeveloperModule,
     PaymentsModule,
+    ReconcilerModule,
   ],
 })
 export class AppModule {}

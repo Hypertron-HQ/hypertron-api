@@ -34,7 +34,9 @@ import type { CreatePaymentDto } from './dto/create-payment.dto';
 import type { ListPaymentsDto } from './dto/list-payments.dto';
 import type { MerchantContext } from '@/common/decorators/current-merchant.decorator';
 import type { AppConfig } from '@/common/config/app.config';
+import type { StellarConfig } from '@/common/config/stellar.config';
 import type { Environment } from '@prisma/client';
+import { InvalidRequestException } from '@/common/exceptions/hypertron.exception';
 
 export interface CreatePaymentResult {
   payment: PaymentResponseDto;
@@ -92,12 +94,37 @@ export class PaymentsService {
         name: dto.customer_name,
       });
 
-      // Step 5–6: generate IDs and linkMemo
+      // Step 5–6: generate payment id + core PaymentLink (hosted checkout)
       const paymentPublicId = generateId(PREFIXES.PAYMENT);
-      const linkMemo = this.buildLinkMemo(paymentPublicId);
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+      const destinationAddress = await this.resolveDestinationAddress(
+        merchant.businessId,
+        merchant.environment,
+      );
+      if (!destinationAddress) {
+        throw new InvalidRequestException(
+          'payment_destination_unconfigured',
+          'No classic payment destination configured. Set Business.receiveAddress to a G… wallet.',
+        );
+      }
+
+      const linkMemo = await this.createUniqueLinkMemo();
+      const paymentLink = await this.prisma.paymentLink.create({
+        data: {
+          businessId: merchant.businessId,
+          amount: dto.amount,
+          currency: dto.currency,
+          purpose: dto.description ?? null,
+          metadata: null,
+          paymentMethods: ['wallet', 'qr'],
+          expiresAt,
+          linkMemo,
+          destinationAddress,
+        },
+      });
 
       const appConfig = this.config.get<AppConfig>('app')!;
-      const checkoutUrl = `${appConfig.checkoutBaseUrl}/pay/${paymentPublicId}`;
+      const checkoutUrl = `${appConfig.checkoutBaseUrl}/pay/${paymentLink.id}`;
 
       // Step 7: create Payment record (status=created)
       const payment = await this.repo.create({
@@ -110,10 +137,10 @@ export class PaymentsService {
         customerId: customer.id,
         metadata: dto.metadata,
         checkoutUrl,
-        paymentLinkId: paymentPublicId, // PaymentLink uses same ID for now
+        paymentLinkId: paymentLink.id,
         linkMemo,
-        destinationAddress: this.getDestinationAddress(merchant.environment),
-        expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 min default
+        destinationAddress,
+        expiresAt,
       });
 
       // Step 8: emit payment.created
@@ -223,33 +250,52 @@ export class PaymentsService {
   // ─── Helpers ────────────────────────────────────────────────────────────────
 
   /**
-   * Builds a unique Stellar memo string from the payment public ID.
-   * Format: hpl_<8-char base58 prefix of sha256(paymentPublicId)>
-   * Fits within Stellar's 28-byte memo text limit.
+   * Classic checkout destination: merchant G… only (never pool C…).
+   * Prefer Business.receiveAddress → login walletAddress → env STELLAR_*_DESTINATION.
    */
-  private buildLinkMemo(paymentPublicId: string): string {
-    const hash = crypto
-      .createHash('sha256')
-      .update(paymentPublicId)
-      .digest('base64url')
-      .slice(0, 8);
-    return `hpl_${hash}`;
+  private async resolveDestinationAddress(
+    businessId: string,
+    environment: string,
+  ): Promise<string> {
+    const business = await this.prisma.business.findUnique({
+      where: { id: businessId },
+      select: { receiveAddress: true, walletAddress: true },
+    });
+    const stellar = this.config.get<StellarConfig>('stellar');
+    const envDestination =
+      environment === 'live'
+        ? stellar?.mainnetDestinationAddress
+        : stellar?.testnetDestinationAddress;
+
+    const candidates = [
+      business?.receiveAddress?.trim(),
+      business?.walletAddress?.trim(),
+      envDestination?.trim(),
+    ];
+
+    for (const addr of candidates) {
+      if (addr && isClassicStellarAddress(addr)) return addr;
+    }
+    return '';
   }
 
-  /**
-   * Returns the Stellar destination address for the given environment.
-   * In Phase 4 this is a placeholder — Phase 6 will wire the real keypairs.
-   */
-  private getDestinationAddress(environment: string): string {
-    if (environment === 'live') {
-      return (
-        this.config.get<string>('STELLAR_MAINNET_DESTINATION_ADDRESS') ??
-        'GCEZWKCA5VLDNRLN3RPRJMRZOX3Z6G5CHCGZFOZ3GJJKM9MST9LNKLY' // testnet placeholder
-      );
+  private async createUniqueLinkMemo(): Promise<string> {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const memo = `hpl_${Date.now().toString(36)}_${crypto.randomBytes(6).toString('hex')}`;
+      const existing = await this.prisma.paymentLink.findUnique({
+        where: { linkMemo: memo },
+        select: { id: true },
+      });
+      if (!existing) return memo;
     }
-    return (
-      this.config.get<string>('STELLAR_TESTNET_DESTINATION_ADDRESS') ??
-      'GCEZWKCA5VLDNRLN3RPRJMRZOX3Z6G5CHCGZFOZ3GJJKM9MST9LNKLY'
+    throw new InvalidRequestException(
+      'memo_generation_failed',
+      'Could not allocate a unique payment memo. Retry the request.',
     );
   }
+}
+
+/** Classic Stellar account public key (G…, 56 chars) — never contract C…. */
+function isClassicStellarAddress(address: string): boolean {
+  return address.startsWith('G') && address.length === 56;
 }

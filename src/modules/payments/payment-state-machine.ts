@@ -70,6 +70,10 @@ export class PaymentStateMachine {
   // ─── pending → confirmed ───────────────────────────────────────────────────
 
   async toConfirmed(paymentInternalId: string, tx: TransactionData): Promise<Payment> {
+    // CAS is status=pending only. Do NOT filter `transactionHash: null` here:
+    // Prisma/Mongo often omits unset optional fields, so `{ transactionHash: null }`
+    // matches 0 rows and the reconciler would skip forever after a Horizon match.
+    // Duplicate hashes are blocked by the unique index on transactionHash.
     return this.transition({
       paymentInternalId,
       fromStates: ALLOWED_FROM.confirmed,
@@ -144,8 +148,16 @@ export class PaymentStateMachine {
     toStatus: PaymentStatus;
     extraData: Partial<Payment>;
     eventType: string;
+    whereExtra?: Record<string, unknown>;
   }): Promise<Payment> {
-    const { paymentInternalId, fromStates, toStatus, extraData, eventType } = params;
+    const {
+      paymentInternalId,
+      fromStates,
+      toStatus,
+      extraData,
+      eventType,
+      whereExtra,
+    } = params;
 
     // 1. Load current payment to check state
     const current = await this.prisma.payment.findUnique({
@@ -162,7 +174,11 @@ export class PaymentStateMachine {
 
     // 2. Atomic compare-and-set — only update if still in an allowed from-state
     const result = await this.prisma.payment.updateMany({
-      where: { id: paymentInternalId, status: { in: fromStates } },
+      where: {
+        id: paymentInternalId,
+        status: { in: fromStates },
+        ...(whereExtra ?? {}),
+      },
       data: { status: toStatus, ...(extraData as object) },
     });
 

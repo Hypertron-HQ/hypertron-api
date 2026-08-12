@@ -78,17 +78,6 @@ export class ApiKeyRepository {
     return keys.map(({ secretHash: _hash, ...rest }) => rest);
   }
 
-  /**
-   * Resolves business IDs for a core-backend AppUser via Membership.
-   */
-  async findBusinessIdsForUser(userId: string): Promise<string[]> {
-    const memberships = await this.prisma.membership.findMany({
-      where: { userId },
-      select: { businessId: true },
-    });
-    return [...new Set(memberships.map((m) => m.businessId))];
-  }
-
   /** Finds a single key by its publicId, scoped to a businessId. */
   async findByPublicId(
     publicId: string,

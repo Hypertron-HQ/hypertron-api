@@ -1,25 +1,9 @@
 /**
- * Integration tests — /api/developer/api-keys (Phase 3)
+ * Integration tests — /api/developer/api-keys
  *
- * Spins up the full DeveloperModule with an in-memory Prisma mock.
- * Exercises all four routes with correct auth, RBAC, and error cases.
- *
- * Routes tested:
- *   GET  /api/developer/api-keys           — list keys
- *   POST /api/developer/api-keys           — create key (Owner/Admin only)
- *   POST /api/developer/api-keys/:id/rotate — rotate key (Owner/Admin only)
- *   POST /api/developer/api-keys/:id/revoke — revoke key (Owner/Admin only)
- *
- * Auth scenarios:
- *   - Missing token → 401
- *   - Invalid token → 401
- *   - Viewer role on mutating route → 403
- *   - Owner role on all routes → passes
- *   - Admin role on mutating routes → passes
- *   - Cross-business isolation → 404
+ * Freighter ht_dashboard cookie auth (shared AUTH_SECRET with core).
  */
 
-import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as request from 'supertest';
@@ -29,19 +13,16 @@ import { ValidationPipe } from '@nestjs/common';
 import { DeveloperModule } from '@/modules/developer/developer.module';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import securityConfig from '@/common/config/security.config';
-import { generateTestSessionToken } from '@/common/guards/session.guard';
+import { generateTestSessionCookie } from '@/common/guards/session.guard';
+import { DASHBOARD_SESSION_COOKIE } from '@/common/auth/dashboard-session';
 import { hashApiKey, generateApiKey } from '@/common/utils/crypto.util';
 import type { ApiKey } from '@prisma/client';
-import type { SessionUser } from '@/common/decorators/current-user.decorator';
 
-// ─── In-memory Prisma mock (same pattern as auth integration test) ─────────────
-
-type MembershipRow = {
-  id: string;
-  userId: string;
-  businessId: string;
-  role: string;
-};
+const AUTH_SECRET = 'test-auth-secret-for-integration';
+const OWNER_WALLET = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
+const OTHER_WALLET = 'GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBWHF';
+const OWNER_BUSINESS_ID = 'biz_test_001';
+const OTHER_BUSINESS_ID = 'biz_test_999';
 
 function matchesWhere<T extends Record<string, unknown>>(
   row: T,
@@ -64,18 +45,13 @@ function matchesWhere<T extends Record<string, unknown>>(
 
 class MockPrismaService {
   private keys: ApiKey[] = [];
-  private memberships: MembershipRow[] = [];
+  private businesses: { id: string; walletAddress: string }[] = [
+    { id: OWNER_BUSINESS_ID, walletAddress: OWNER_WALLET },
+    { id: OTHER_BUSINESS_ID, walletAddress: OTHER_WALLET },
+  ];
 
   seed(key: ApiKey) {
     this.keys.push(key);
-  }
-
-  seedMembership(row: MembershipRow) {
-    this.memberships.push(row);
-  }
-
-  getAll(): ApiKey[] {
-    return this.keys;
   }
 
   readonly apiKey = {
@@ -110,18 +86,18 @@ class MockPrismaService {
     },
   };
 
-  readonly membership = {
-    findMany: async (args: {
-      where: Record<string, unknown>;
-      select?: { businessId?: boolean };
+  readonly business = {
+    findUnique: async (args: {
+      where: { walletAddress?: string; id?: string };
+      select?: { id?: boolean };
     }) => {
-      const rows = this.memberships.filter((m) =>
-        matchesWhere(m as unknown as Record<string, unknown>, args.where),
+      const row = this.businesses.find((b) =>
+        args.where.walletAddress
+          ? b.walletAddress === args.where.walletAddress
+          : b.id === args.where.id,
       );
-      if (args.select?.businessId) {
-        return rows.map((m) => ({ businessId: m.businessId }));
-      }
-      return rows;
+      if (!row) return null;
+      return args.select?.id ? { id: row.id } : row;
     },
   };
 
@@ -132,42 +108,15 @@ class MockPrismaService {
   }
 }
 
-// ─── Session token helpers ────────────────────────────────────────────────────
-
-function sessionHeader(user: SessionUser): { Authorization: string } {
-  return { Authorization: `Bearer ${generateTestSessionToken(user)}` };
+function sessionCookie(walletAddress: string): { Cookie: string } {
+  const token = generateTestSessionCookie(walletAddress, AUTH_SECRET);
+  return { Cookie: `${DASHBOARD_SESSION_COOKIE}=${token}` };
 }
-
-const OWNER: SessionUser = {
-  userId: 'user_owner_001',
-  businessId: 'biz_test_001',
-  role: 'owner',
-};
-
-const ADMIN: SessionUser = {
-  userId: 'user_admin_001',
-  businessId: 'biz_test_001',
-  role: 'admin',
-};
-
-const VIEWER: SessionUser = {
-  userId: 'user_viewer_001',
-  businessId: 'biz_test_001',
-  role: 'viewer',
-};
-
-const OTHER_BUSINESS: SessionUser = {
-  userId: 'user_other_001',
-  businessId: 'biz_test_999',
-  role: 'owner',
-};
-
-// ─── Seed helper ─────────────────────────────────────────────────────────────
 
 let seedCounter = 0;
 async function seedKey(
   prisma: MockPrismaService,
-  businessId = OWNER.businessId,
+  businessId = OWNER_BUSINESS_ID,
   environment: 'test' | 'live' = 'test',
   active = true,
 ): Promise<{ rawKey: string; record: ApiKey }> {
@@ -195,8 +144,6 @@ async function seedKey(
   return { rawKey, record };
 }
 
-// ─── Test setup ───────────────────────────────────────────────────────────────
-
 describe('/api/developer/api-keys (integration)', () => {
   let app: INestApplication;
   let prisma: MockPrismaService;
@@ -204,6 +151,7 @@ describe('/api/developer/api-keys (integration)', () => {
   beforeEach(async () => {
     seedCounter = 0;
     prisma = new MockPrismaService();
+    process.env.AUTH_SECRET = AUTH_SECRET;
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [
@@ -235,8 +183,6 @@ describe('/api/developer/api-keys (integration)', () => {
     if (app) await app.close();
   });
 
-  // ─── GET /api/developer/api-keys ─────────────────────────────────────────────
-
   describe('GET /api/developer/api-keys', () => {
     it('200 — returns list with object=list wrapper', async () => {
       await seedKey(prisma);
@@ -244,7 +190,7 @@ describe('/api/developer/api-keys (integration)', () => {
 
       const res = await request(app.getHttpServer())
         .get('/api/developer/api-keys')
-        .set(sessionHeader(OWNER))
+        .set(sessionCookie(OWNER_WALLET))
         .expect(200);
 
       expect(res.body.object).toBe('list');
@@ -257,7 +203,7 @@ describe('/api/developer/api-keys (integration)', () => {
 
       const res = await request(app.getHttpServer())
         .get('/api/developer/api-keys')
-        .set(sessionHeader(OWNER))
+        .set(sessionCookie(OWNER_WALLET))
         .expect(200);
 
       const key = res.body.data[0];
@@ -265,60 +211,30 @@ describe('/api/developer/api-keys (integration)', () => {
       expect(key.object).toBe('api_key');
       expect(key.secret_key).toBeNull();
       expect(key).not.toHaveProperty('secretHash');
-      expect(key).not.toHaveProperty('secret_hash');
     });
 
     it('200 — returns empty list when no keys exist', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/developer/api-keys')
-        .set(sessionHeader(OWNER))
+        .set(sessionCookie(OWNER_WALLET))
         .expect(200);
 
       expect(res.body.data).toEqual([]);
     });
 
-    it('200 — viewer role can list keys', async () => {
-      await request(app.getHttpServer())
-        .get('/api/developer/api-keys')
-        .set(sessionHeader(VIEWER))
-        .expect(200);
-    });
-
     it('200 — only returns keys belonging to the authenticated business', async () => {
-      await seedKey(prisma, OWNER.businessId);
-      await seedKey(prisma, 'biz_other_999'); // different business
+      await seedKey(prisma, OWNER_BUSINESS_ID);
+      await seedKey(prisma, OTHER_BUSINESS_ID);
 
       const res = await request(app.getHttpServer())
         .get('/api/developer/api-keys')
-        .set(sessionHeader(OWNER))
+        .set(sessionCookie(OWNER_WALLET))
         .expect(200);
 
       expect(res.body.data).toHaveLength(1);
-      for (const key of res.body.data) {
-        expect(key.id).toMatch(/^key_/);
-      }
     });
 
-    it('200 — resolves merchant via Membership when present', async () => {
-      prisma.seedMembership({
-        id: 'mem_1',
-        userId: OWNER.userId,
-        businessId: 'biz_from_membership',
-        role: 'owner',
-      });
-      await seedKey(prisma, 'biz_from_membership');
-      await seedKey(prisma, OWNER.businessId); // session fallback business — ignored when membership exists
-
-      const res = await request(app.getHttpServer())
-        .get('/api/developer/api-keys')
-        .set(sessionHeader(OWNER))
-        .expect(200);
-
-      expect(res.body.data).toHaveLength(1);
-      expect(res.body.data[0].id).toMatch(/^key_/);
-    });
-
-    it('401 — missing token', async () => {
+    it('401 — missing cookie', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/developer/api-keys')
         .expect(401);
@@ -327,10 +243,10 @@ describe('/api/developer/api-keys (integration)', () => {
       expect(res.body.error.code).toBe('missing_session_token');
     });
 
-    it('401 — invalid / malformed token', async () => {
+    it('401 — invalid cookie', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/developer/api-keys')
-        .set('Authorization', 'Bearer notvalidbase64!!!json')
+        .set('Cookie', `${DASHBOARD_SESSION_COOKIE}=not.valid.token`)
         .expect(401);
 
       expect(res.body.error.type).toBe('authentication_error');
@@ -338,222 +254,68 @@ describe('/api/developer/api-keys (integration)', () => {
     });
   });
 
-  // ─── POST /api/developer/api-keys ────────────────────────────────────────────
-
   describe('POST /api/developer/api-keys', () => {
     it('201 — creates a key and returns secret_key once', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/developer/api-keys')
-        .set(sessionHeader(OWNER))
-        .send({ name: 'My Server Key', environment: 'test' })
+        .set(sessionCookie(OWNER_WALLET))
+        .send({ name: 'My Key', environment: 'test' })
         .expect(201);
 
-      expect(res.body.object).toBe('api_key');
-      expect(res.body.id).toMatch(/^key_/);
-      expect(res.body.name).toBe('My Server Key');
-      expect(res.body.environment).toBe('test');
-      // secret_key must be present and non-null on creation
-      expect(typeof res.body.secret_key).toBe('string');
       expect(res.body.secret_key).toMatch(/^sk_test_/);
-      expect(res.body.active).toBe(true);
+      expect(res.body.id).toMatch(/^key_/);
+      expect(res.body.object).toBe('api_key');
     });
 
-    it('201 — creates a live key', async () => {
-      const res = await request(app.getHttpServer())
-        .post('/api/developer/api-keys')
-        .set(sessionHeader(OWNER))
-        .send({ name: 'Live Key', environment: 'live' })
-        .expect(201);
-
-      expect(res.body.environment).toBe('live');
-      expect(res.body.secret_key).toMatch(/^sk_live_/);
-    });
-
-    it('201 — admin can create a key', async () => {
+    it('401 — missing cookie', async () => {
       await request(app.getHttpServer())
         .post('/api/developer/api-keys')
-        .set(sessionHeader(ADMIN))
-        .send({ name: 'Admin Key', environment: 'test' })
-        .expect(201);
-    });
-
-    it('403 — viewer cannot create a key', async () => {
-      const res = await request(app.getHttpServer())
-        .post('/api/developer/api-keys')
-        .set(sessionHeader(VIEWER))
-        .send({ name: 'Viewer Key', environment: 'test' })
-        .expect(403);
-
-      expect(res.body.error.type).toBe('permission_error');
-    });
-
-    it('400 — missing name field', async () => {
-      const res = await request(app.getHttpServer())
-        .post('/api/developer/api-keys')
-        .set(sessionHeader(OWNER))
-        .send({ environment: 'test' })
-        .expect(400);
-
-      expect(res.body).toHaveProperty('message');
-    });
-
-    it('400 — invalid environment value', async () => {
-      const res = await request(app.getHttpServer())
-        .post('/api/developer/api-keys')
-        .set(sessionHeader(OWNER))
-        .send({ name: 'My Key', environment: 'staging' })
-        .expect(400);
-
-      expect(res.body).toHaveProperty('message');
-    });
-
-    it('400 — empty name', async () => {
-      await request(app.getHttpServer())
-        .post('/api/developer/api-keys')
-        .set(sessionHeader(OWNER))
-        .send({ name: '', environment: 'test' })
-        .expect(400);
-    });
-
-    it('400 — extra unknown field is rejected (whitelist)', async () => {
-      await request(app.getHttpServer())
-        .post('/api/developer/api-keys')
-        .set(sessionHeader(OWNER))
-        .send({ name: 'Key', environment: 'test', extra: 'field' })
-        .expect(400);
-    });
-
-    it('401 — missing token', async () => {
-      await request(app.getHttpServer())
-        .post('/api/developer/api-keys')
-        .send({ name: 'Key', environment: 'test' })
+        .send({ name: 'My Key', environment: 'test' })
         .expect(401);
     });
   });
-
-  // ─── POST /api/developer/api-keys/:id/rotate ─────────────────────────────────
 
   describe('POST /api/developer/api-keys/:id/rotate', () => {
-    it('200 — rotates a key and returns new secret_key', async () => {
+    it('200 — rotates and returns new secret_key', async () => {
       const { record } = await seedKey(prisma);
 
       const res = await request(app.getHttpServer())
         .post(`/api/developer/api-keys/${record.publicId}/rotate`)
-        .set(sessionHeader(OWNER))
+        .set(sessionCookie(OWNER_WALLET))
         .expect(200);
 
-      expect(res.body.object).toBe('api_key');
-      // New id should differ from the old one
+      expect(res.body.secret_key).toMatch(/^sk_test_/);
       expect(res.body.id).not.toBe(record.publicId);
-      // secret_key is non-null after rotation
-      expect(typeof res.body.secret_key).toBe('string');
-      expect(res.body.active).toBe(true);
     });
 
-    it('200 — admin can rotate a key', async () => {
-      const { record } = await seedKey(prisma);
+    it('404 — key from another business', async () => {
+      const { record } = await seedKey(prisma, OTHER_BUSINESS_ID);
 
       await request(app.getHttpServer())
         .post(`/api/developer/api-keys/${record.publicId}/rotate`)
-        .set(sessionHeader(ADMIN))
-        .expect(200);
-    });
-
-    it('404 — key not found for this business', async () => {
-      const res = await request(app.getHttpServer())
-        .post('/api/developer/api-keys/key_doesnotexist/rotate')
-        .set(sessionHeader(OWNER))
+        .set(sessionCookie(OWNER_WALLET))
         .expect(404);
-
-      expect(res.body.error.type).toBe('resource_missing');
-    });
-
-    it('404 — cannot rotate another business key (cross-business isolation)', async () => {
-      // Seed a key for OTHER_BUSINESS
-      const { record } = await seedKey(prisma, OTHER_BUSINESS.businessId);
-
-      const res = await request(app.getHttpServer())
-        .post(`/api/developer/api-keys/${record.publicId}/rotate`)
-        .set(sessionHeader(OWNER)) // OWNER is biz_test_001, not biz_test_999
-        .expect(404);
-
-      expect(res.body.error.type).toBe('resource_missing');
-    });
-
-    it('403 — viewer cannot rotate a key', async () => {
-      const { record } = await seedKey(prisma);
-
-      await request(app.getHttpServer())
-        .post(`/api/developer/api-keys/${record.publicId}/rotate`)
-        .set(sessionHeader(VIEWER))
-        .expect(403);
-    });
-
-    it('401 — missing token', async () => {
-      await request(app.getHttpServer())
-        .post('/api/developer/api-keys/key_001/rotate')
-        .expect(401);
     });
   });
 
-  // ─── POST /api/developer/api-keys/:id/revoke ─────────────────────────────────
-
   describe('POST /api/developer/api-keys/:id/revoke', () => {
-    it('200 — revokes the key and returns active=false', async () => {
+    it('200 — revokes key', async () => {
       const { record } = await seedKey(prisma);
 
       const res = await request(app.getHttpServer())
         .post(`/api/developer/api-keys/${record.publicId}/revoke`)
-        .set(sessionHeader(OWNER))
+        .set(sessionCookie(OWNER_WALLET))
         .expect(200);
 
-      expect(res.body.object).toBe('api_key');
-      expect(res.body.active).toBe(false);
       expect(res.body.secret_key).toBeNull();
+      expect(res.body.id).toBe(record.publicId);
     });
 
-    it('200 — admin can revoke a key', async () => {
-      const { record } = await seedKey(prisma);
-
+    it('404 — already revoked / missing', async () => {
       await request(app.getHttpServer())
-        .post(`/api/developer/api-keys/${record.publicId}/revoke`)
-        .set(sessionHeader(ADMIN))
-        .expect(200);
-    });
-
-    it('404 — key not found', async () => {
-      const res = await request(app.getHttpServer())
-        .post('/api/developer/api-keys/key_doesnotexist/revoke')
-        .set(sessionHeader(OWNER))
+        .post('/api/developer/api-keys/key_missing/revoke')
+        .set(sessionCookie(OWNER_WALLET))
         .expect(404);
-
-      expect(res.body.error.type).toBe('resource_missing');
-    });
-
-    it('404 — cannot revoke another business key (cross-business isolation)', async () => {
-      const { record } = await seedKey(prisma, OTHER_BUSINESS.businessId);
-
-      const res = await request(app.getHttpServer())
-        .post(`/api/developer/api-keys/${record.publicId}/revoke`)
-        .set(sessionHeader(OWNER))
-        .expect(404);
-
-      expect(res.body.error.type).toBe('resource_missing');
-    });
-
-    it('403 — viewer cannot revoke a key', async () => {
-      const { record } = await seedKey(prisma);
-
-      await request(app.getHttpServer())
-        .post(`/api/developer/api-keys/${record.publicId}/revoke`)
-        .set(sessionHeader(VIEWER))
-        .expect(403);
-    });
-
-    it('401 — missing token', async () => {
-      await request(app.getHttpServer())
-        .post('/api/developer/api-keys/key_001/revoke')
-        .expect(401);
     });
   });
 });

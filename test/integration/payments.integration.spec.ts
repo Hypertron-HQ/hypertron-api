@@ -15,34 +15,24 @@
  *   - Valid creation → 201, status=pending, secret_key absent
  *   - Idempotency replay → identical 201 response
  *   - Idempotency body mismatch → 409
- *   - Missing Idempotency-Key → 400
+ *   - Idempotency in-flight → 409
+ *   - Idempotency concurrent reserve race → 409
+ *   - Missing / invalid Idempotency-Key → 400
  *   - Invalid amount → 400
  *   - Retrieve existing payment → 200
  *   - Retrieve non-existent → 404
  *   - Cross-environment isolation (test key cannot see live payments)
- *   - List with has_more and cursor
+ *   - Cross-merchant isolation (business A cannot see business B)
+ *   - List with has_more and cursor pagination
  *   - Cancel created/pending payment → 200
  *   - Cancel completed payment → 409
  *   - List events → 200
  */
 
-import {
-  Controller,
-  Module,
-  UseGuards,
-  Get,
-  Post,
-  Body,
-  Param,
-  Query,
-  Headers,
-  HttpCode,
-  HttpStatus,
-  Injectable,
-} from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as request from 'supertest';
+import * as crypto from 'crypto';
 import type { INestApplication } from '@nestjs/common';
 import { ValidationPipe } from '@nestjs/common';
 import type { Payment, PaymentEvent, Customer, IdempotencyRecord } from '@prisma/client';
@@ -50,26 +40,11 @@ import { PaymentStatus } from '@prisma/client';
 
 import securityConfig from '@/common/config/security.config';
 import appConfig from '@/common/config/app.config';
+import stellarConfig from '@/common/config/stellar.config';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
-import { ApiKeyGuard } from '@/common/guards/api-key.guard';
-import { ApiKeyService } from '@/modules/auth/api-key.service';
-import {
-  CurrentMerchant,
-  type MerchantContext,
-  MERCHANT_CONTEXT_KEY,
-} from '@/common/decorators/current-merchant.decorator';
-import { PaymentsService } from '@/modules/payments/payments.service';
-import { IdempotencyService } from '@/modules/idempotency/idempotency.service';
 import { PaymentsModule } from '@/modules/payments/payments.module';
-import { AuthModule } from '@/modules/auth/auth.module';
 import { generateApiKey, hashApiKey } from '@/common/utils/crypto.util';
 import type { ApiKey } from '@prisma/client';
-import {
-  toPaymentListResponse,
-  toPaymentEventListResponse,
-} from '@/modules/payments/dto/payment-response.dto';
-import { CreatePaymentDto } from '@/modules/payments/dto/create-payment.dto';
-import { ListPaymentsDto } from '@/modules/payments/dto/list-payments.dto';
 
 // ─── In-memory store ──────────────────────────────────────────────────────────
 
@@ -79,6 +54,20 @@ class InMemoryStore {
   customers: Customer[] = [];
   apiKeys: ApiKey[] = [];
   idempotency: IdempotencyRecord[] = [];
+  businesses: { id: string; walletAddress: string; receiveAddress: string | null }[] = [];
+  paymentLinks: {
+    id: string;
+    businessId: string;
+    amount: string | null;
+    currency: string;
+    purpose: string | null;
+    metadata: string | null;
+    paymentMethods: string[];
+    expiresAt: Date | null;
+    linkMemo: string;
+    destinationAddress: string;
+    createdAt: Date;
+  }[] = [];
 
   private nextId = 0;
   genId() { return `oid_${++this.nextId}`; }
@@ -122,17 +111,51 @@ class MockPrismaService {
         (where.publicId ? p.publicId === where.publicId : true),
       ) ?? null,
     ),
-    findMany: jest.fn(async ({ where, take, orderBy }: {
-      where?: Partial<Payment> & { OR?: object[]; environment?: string };
+    findMany: jest.fn(async ({ where, take }: {
+      where?: Partial<Payment> & {
+        OR?: Array<Record<string, unknown>>;
+        environment?: string;
+      };
       take?: number;
       orderBy?: object[];
     }) => {
       let results = this.store.payments.filter((p) => {
         if (where?.businessId && p.businessId !== where.businessId) return false;
         if (where?.environment && p.environment !== where.environment) return false;
+        if (where?.OR?.length) {
+          return where.OR.some((clause) => {
+            const createdAt = clause.createdAt as
+              | Date
+              | { lt?: Date }
+              | undefined;
+            if (
+              createdAt &&
+              typeof createdAt === 'object' &&
+              !(createdAt instanceof Date) &&
+              createdAt.lt
+            ) {
+              return p.createdAt.getTime() < createdAt.lt.getTime();
+            }
+            if (createdAt instanceof Date && typeof clause.id === 'object') {
+              const idClause = clause.id as { lt?: string };
+              return (
+                p.createdAt.getTime() === createdAt.getTime() &&
+                !!idClause.lt &&
+                p.id < idClause.lt
+              );
+            }
+            return false;
+          });
+        }
         return true;
       });
-      results = results.slice().sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      results = results
+        .slice()
+        .sort((a, b) => {
+          const byTime = b.createdAt.getTime() - a.createdAt.getTime();
+          if (byTime !== 0) return byTime;
+          return b.id < a.id ? -1 : b.id > a.id ? 1 : 0;
+        });
       if (take) results = results.slice(0, take);
       return results;
     }),
@@ -255,6 +278,54 @@ class MockPrismaService {
     }),
   };
 
+  readonly business = {
+    findUnique: jest.fn(async ({
+      where,
+      select,
+    }: {
+      where: { id?: string; walletAddress?: string };
+      select?: { receiveAddress?: boolean; id?: boolean };
+    }) => {
+      const row = this.store.businesses.find((b) =>
+        where.id ? b.id === where.id : b.walletAddress === where.walletAddress,
+      );
+      if (!row) return null;
+      if (select?.receiveAddress) {
+        return { receiveAddress: row.receiveAddress };
+      }
+      return { id: row.id, receiveAddress: row.receiveAddress };
+    }),
+  };
+
+  readonly paymentLink = {
+    findUnique: jest.fn(async ({
+      where,
+      select,
+    }: {
+      where: { linkMemo?: string; id?: string };
+      select?: { id?: boolean };
+    }) => {
+      const row = this.store.paymentLinks.find((l) =>
+        where.linkMemo ? l.linkMemo === where.linkMemo : l.id === where.id,
+      );
+      if (!row) return null;
+      return select?.id ? { id: row.id } : row;
+    }),
+    create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+      const link = {
+        id: `pl_${this.store.genId()}`,
+        createdAt: new Date(),
+        purpose: null,
+        metadata: null,
+        paymentMethods: ['wallet', 'qr'],
+        expiresAt: null,
+        ...data,
+      } as InMemoryStore['paymentLinks'][number];
+      this.store.paymentLinks.push(link);
+      return link;
+    }),
+  };
+
   async $connect() {}
   async $disconnect() {}
   async $transaction(ops: Promise<unknown>[]) { return Promise.all(ops); }
@@ -263,16 +334,33 @@ class MockPrismaService {
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 
 const BIZ_ID = 'biz_pay_test_001';
+const BIZ_B = 'biz_pay_test_002';
 const API_KEY_PUBLIC_ID = 'key_pay_test_001';
 
-async function seedApiKey(prisma: MockPrismaService, env: 'test' | 'live' = 'test') {
+/** Mirrors IdempotencyService.hashBody — used to seed in-flight records. */
+function hashBody(body: Record<string, unknown>): string {
+  const sorted = JSON.stringify(body, Object.keys(body).sort());
+  return crypto.createHash('sha256').update(sorted, 'utf8').digest('hex');
+}
+
+async function seedApiKey(
+  prisma: MockPrismaService,
+  opts: {
+    env?: 'test' | 'live';
+    businessId?: string;
+    publicId?: string;
+  } = {},
+) {
+  const env = opts.env ?? 'test';
+  const businessId = opts.businessId ?? BIZ_ID;
+  const publicId = opts.publicId ?? `key_${env}_${businessId}`;
   const rawKey = generateApiKey(env);
   const hash = await hashApiKey(rawKey, 4);
   prisma.store.apiKeys.push({
-    id: `apikeyid_${env}`,
-    publicId: API_KEY_PUBLIC_ID,
-    businessId: BIZ_ID,
-    name: 'Test Key',
+    id: `apikeyid_${publicId}`,
+    publicId,
+    businessId,
+    name: `${env} key`,
     environment: env,
     keyPrefix: `sk_${env}_`,
     secretHash: hash,
@@ -282,7 +370,44 @@ async function seedApiKey(prisma: MockPrismaService, env: 'test' | 'live' = 'tes
     createdAt: new Date(),
     revokedAt: null,
   });
-  return rawKey;
+  return { rawKey, publicId, businessId, env };
+}
+
+function seedPayment(
+  prisma: MockPrismaService,
+  overrides: Partial<Payment> = {},
+): Payment {
+  const now = new Date();
+  const p: Payment = {
+    id: prisma.store.genId(),
+    publicId: overrides.publicId ?? `pay_seed_${prisma.store.payments.length + 1}`,
+    businessId: overrides.businessId ?? BIZ_ID,
+    environment: overrides.environment ?? 'test',
+    amount: overrides.amount ?? '10.00',
+    currency: overrides.currency ?? 'USDC',
+    status: overrides.status ?? PaymentStatus.pending,
+    description: overrides.description ?? null,
+    customerId: overrides.customerId ?? null,
+    metadata: overrides.metadata ?? {},
+    checkoutUrl: overrides.checkoutUrl ?? 'http://localhost/checkout',
+    paymentLinkId: overrides.paymentLinkId ?? 'plink_seed',
+    linkMemo: overrides.linkMemo ?? 'hpl_seed',
+    destinationAddress: overrides.destinationAddress ?? 'GDEST',
+    payerAddress: null,
+    transactionHash: null,
+    assetIssuer: null,
+    failureCode: null,
+    failureMessage: null,
+    paidAt: null,
+    completedAt: null,
+    canceledAt: null,
+    expiresAt: null,
+    createdAt: overrides.createdAt ?? now,
+    updatedAt: overrides.updatedAt ?? now,
+    ...overrides,
+  } as Payment;
+  prisma.store.payments.push(p);
+  return p;
 }
 
 // ─── Test module ──────────────────────────────────────────────────────────────
@@ -291,6 +416,7 @@ describe('/v1/payments (integration)', () => {
   let app: INestApplication;
   let prisma: MockPrismaService;
   let rawKey: string;
+  let apiKeyPublicId: string;
   const IDEM_KEY = 'test-idem-key-001';
 
   const VALID_BODY = {
@@ -302,13 +428,25 @@ describe('/v1/payments (integration)', () => {
 
   beforeEach(async () => {
     prisma = new MockPrismaService();
-    rawKey = await seedApiKey(prisma, 'test');
+    prisma.store.businesses.push({
+      id: BIZ_ID,
+      walletAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+      // Classic G… destination (56 chars) — never pool C…
+      receiveAddress: 'GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H',
+    });
+    const seeded = await seedApiKey(prisma, {
+      env: 'test',
+      businessId: BIZ_ID,
+      publicId: API_KEY_PUBLIC_ID,
+    });
+    rawKey = seeded.rawKey;
+    apiKeyPublicId = seeded.publicId;
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({
           isGlobal: true,
-          load: [securityConfig, appConfig],
+          load: [securityConfig, appConfig, stellarConfig],
           ignoreEnvFile: true,
         }),
         PaymentsModule,
@@ -373,6 +511,78 @@ describe('/v1/payments (integration)', () => {
       expect(r2.body.status).toBe(r1.body.status);
     });
 
+    it('409 — idempotency body mismatch (same key, different body)', async () => {
+      await request(app.getHttpServer())
+        .post('/v1/payments')
+        .set(auth())
+        .set('Idempotency-Key', 'idem-mismatch')
+        .send(VALID_BODY)
+        .expect(201);
+
+      const res = await request(app.getHttpServer())
+        .post('/v1/payments')
+        .set(auth())
+        .set('Idempotency-Key', 'idem-mismatch')
+        .send({ ...VALID_BODY, amount: '99.00' })
+        .expect(409);
+
+      expect(res.body.error.type).toBe('idempotency_error');
+      expect(res.body.error.code).toBe('idempotency_key_reused');
+    });
+
+    it('409 — idempotency key still in-flight', async () => {
+      // Seed an in-flight record matching VALID_BODY hash (responseStatus=0)
+      prisma.store.idempotency.push({
+        id: prisma.store.genId(),
+        businessId: BIZ_ID,
+        apiKeyId: apiKeyPublicId,
+        key: 'idem-inflight',
+        requestHash: hashBody(VALID_BODY),
+        responseStatus: 0,
+        responseBody: {},
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + 86400000),
+      } as IdempotencyRecord);
+
+      const res = await request(app.getHttpServer())
+        .post('/v1/payments')
+        .set(auth())
+        .set('Idempotency-Key', 'idem-inflight')
+        .send(VALID_BODY)
+        .expect(409);
+
+      expect(res.body.error.type).toBe('idempotency_error');
+      expect(res.body.error.code).toBe('idempotency_key_in_flight');
+    });
+
+    it('409 — concurrent reserve race returns in-flight', async () => {
+      const [r1, r2] = await Promise.all([
+        request(app.getHttpServer())
+          .post('/v1/payments')
+          .set(auth())
+          .set('Idempotency-Key', 'idem-race')
+          .send(VALID_BODY),
+        request(app.getHttpServer())
+          .post('/v1/payments')
+          .set(auth())
+          .set('Idempotency-Key', 'idem-race')
+          .send(VALID_BODY),
+      ]);
+
+      // Guarantees: at most one payment; loser is 409 in-flight OR both 201 replay same id
+      expect([r1.status, r2.status].every((s) => s === 201 || s === 409)).toBe(true);
+      expect([r1.status, r2.status].includes(201)).toBe(true);
+      expect(prisma.store.payments.filter((p) => p.businessId === BIZ_ID)).toHaveLength(1);
+
+      if (r1.status === 201 && r2.status === 201) {
+        expect(r1.body.id).toBe(r2.body.id);
+      } else {
+        const conflict = r1.status === 409 ? r1 : r2;
+        expect(conflict.body.error.type).toBe('idempotency_error');
+        expect(conflict.body.error.code).toBe('idempotency_key_in_flight');
+      }
+    });
+
     it('400 — missing Idempotency-Key header', async () => {
       const res = await request(app.getHttpServer())
         .post('/v1/payments')
@@ -381,6 +591,17 @@ describe('/v1/payments (integration)', () => {
         .expect(400);
 
       expect(res.body.error.code).toBe('missing_idempotency_key');
+    });
+
+    it('400 — Idempotency-Key longer than 255 chars', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/v1/payments')
+        .set(auth())
+        .set('Idempotency-Key', 'x'.repeat(256))
+        .send(VALID_BODY)
+        .expect(400);
+
+      expect(res.body.error.code).toBe('invalid_idempotency_key');
     });
 
     it('400 — invalid amount (zero)', async () => {
@@ -470,6 +691,36 @@ describe('/v1/payments (integration)', () => {
       expect(res.body.error.type).toBe('resource_missing');
     });
 
+    it('404 — cross-environment isolation (test key cannot see live payment)', async () => {
+      const live = seedPayment(prisma, {
+        publicId: 'pay_live_only',
+        environment: 'live',
+        businessId: BIZ_ID,
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(`/v1/payments/${live.publicId}`)
+        .set(auth()) // test-env key
+        .expect(404);
+
+      expect(res.body.error.type).toBe('resource_missing');
+    });
+
+    it('404 — cross-merchant isolation (BIZ_A cannot see BIZ_B payment)', async () => {
+      const other = seedPayment(prisma, {
+        publicId: 'pay_other_biz',
+        businessId: BIZ_B,
+        environment: 'test',
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(`/v1/payments/${other.publicId}`)
+        .set(auth())
+        .expect(404);
+
+      expect(res.body.error.type).toBe('resource_missing');
+    });
+
     it('401 — missing auth', async () => {
       await request(app.getHttpServer())
         .get('/v1/payments/pay_1')
@@ -504,6 +755,62 @@ describe('/v1/payments (integration)', () => {
         .expect(200);
 
       expect(res.body.data.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('200 — has_more=true and cursor returns remaining page', async () => {
+      // Create 3 payments so limit=2 yields has_more + a second page
+      for (let i = 0; i < 3; i++) {
+        await request(app.getHttpServer())
+          .post('/v1/payments')
+          .set(auth())
+          .set('Idempotency-Key', `page-${i}`)
+          .send({ ...VALID_BODY, amount: `${(i + 1).toFixed(2)}` })
+          .expect(201);
+      }
+
+      const page1 = await request(app.getHttpServer())
+        .get('/v1/payments?limit=2')
+        .set(auth())
+        .expect(200);
+
+      expect(page1.body.data).toHaveLength(2);
+      expect(page1.body.has_more).toBe(true);
+      expect(page1.body.next_cursor).toEqual(expect.any(String));
+
+      const page2 = await request(app.getHttpServer())
+        .get(`/v1/payments?limit=2&cursor=${encodeURIComponent(page1.body.next_cursor)}`)
+        .set(auth())
+        .expect(200);
+
+      expect(page2.body.data).toHaveLength(1);
+      expect(page2.body.has_more).toBe(false);
+      expect(page2.body.next_cursor).toBeNull();
+
+      const page1Ids = page1.body.data.map((p: { id: string }) => p.id);
+      const page2Ids = page2.body.data.map((p: { id: string }) => p.id);
+      expect(page1Ids).not.toEqual(expect.arrayContaining(page2Ids));
+    });
+
+    it('200 — list excludes other-environment and other-business payments', async () => {
+      await request(app.getHttpServer())
+        .post('/v1/payments')
+        .set(auth())
+        .set('Idempotency-Key', 'list-own')
+        .send(VALID_BODY)
+        .expect(201);
+
+      seedPayment(prisma, { publicId: 'pay_live_hidden', environment: 'live', businessId: BIZ_ID });
+      seedPayment(prisma, { publicId: 'pay_other_hidden', environment: 'test', businessId: BIZ_B });
+
+      const res = await request(app.getHttpServer())
+        .get('/v1/payments')
+        .set(auth())
+        .expect(200);
+
+      const ids = res.body.data.map((p: { id: string }) => p.id);
+      expect(ids).not.toContain('pay_live_hidden');
+      expect(ids).not.toContain('pay_other_hidden');
+      expect(ids.length).toBeGreaterThanOrEqual(1);
     });
 
     it('400 — limit > 100 is rejected', async () => {

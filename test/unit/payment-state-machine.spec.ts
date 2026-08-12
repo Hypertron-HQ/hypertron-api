@@ -59,9 +59,19 @@ function makePayment(status: PaymentStatus, overrides: Partial<Payment> = {}): P
 function buildMockPrisma(payment: Payment) {
   // Simulate updateMany modifying the in-memory payment
   const updateMany = jest.fn().mockImplementation(
-    async (args: { where: { status?: { in?: PaymentStatus[] } }; data: Partial<Payment> }) => {
+    async (args: {
+      where: { status?: { in?: PaymentStatus[] }; transactionHash?: null };
+      data: Partial<Payment>;
+    }) => {
       const allowed = args.where.status?.in ?? [];
       if (allowed.length > 0 && !allowed.includes(payment.status)) {
+        return { count: 0 };
+      }
+      if (
+        'transactionHash' in args.where &&
+        args.where.transactionHash === null &&
+        payment.transactionHash !== null
+      ) {
         return { count: 0 };
       }
       Object.assign(payment, args.data);

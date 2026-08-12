@@ -49,7 +49,7 @@ import {
 } from './dto/api-key-response.dto';
 
 @ApiTags('Developer')
-@ApiBearerAuth('SessionToken')
+@ApiBearerAuth('SessionCookie')
 @Controller('api/developer/api-keys')
 @UseGuards(SessionGuard, RolesGuard)
 export class ApiKeysController {
@@ -61,15 +61,12 @@ export class ApiKeysController {
   @ApiOperation({
     summary: 'List API keys',
     description:
-      'Returns all active API keys for the merchant(s) the authenticated user ' +
-      'belongs to (resolved via Membership / businessId). ' +
-      'secret_key is always null in list responses.',
+      'Returns all active API keys for the Freighter-authenticated merchant ' +
+      '(Business.id from ht_dashboard cookie). secret_key is always null in list responses.',
   })
   @ApiResponse({ status: 200, type: ApiKeyListResponseDto })
   async list(@CurrentUser() user: SessionUser): Promise<ApiKeyListResponseDto> {
-    const keys = await this.apiKeyService.listForUserId(user.userId, {
-      fallbackBusinessId: user.businessId,
-    });
+    const keys = await this.apiKeyService.listForBusiness(user.businessId);
     return toApiKeyListResponse(keys);
   }
 

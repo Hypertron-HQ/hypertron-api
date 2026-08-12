@@ -28,15 +28,18 @@ import { CustomersModule } from '@/modules/customers/customers.module';
 import { DeveloperModule } from '@/modules/developer/developer.module';
 import { AuthModule } from '@/modules/auth/auth.module';
 import { generateApiKey, hashApiKey } from '@/common/utils/crypto.util';
-import { generateTestSessionToken } from '@/common/guards/session.guard';
-import type { SessionUser } from '@/common/decorators/current-user.decorator';
+import { generateTestSessionCookie } from '@/common/guards/session.guard';
+import { DASHBOARD_SESSION_COOKIE } from '@/common/auth/dashboard-session';
 
 // ─── In-memory store ──────────────────────────────────────────────────────────
 
 class MockPrismaService {
   customers: Customer[] = [];
   apiKeys: ApiKey[] = [];
-  memberships: { userId: string; businessId: string; role: string }[] = [];
+  businesses: { id: string; walletAddress: string }[] = [
+    { id: 'biz_cust_test_A', walletAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF' },
+    { id: 'biz_cust_test_B', walletAddress: 'GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBWHF' },
+  ];
 
   private seq = 0;
   id() { return `oid_${++this.seq}`; }
@@ -47,19 +50,46 @@ class MockPrismaService {
         Object.entries(where).every(([k, v]) => (c as Record<string, unknown>)[k] === v),
       ) ?? null,
     ),
-    findMany: jest.fn(async ({ where, take, orderBy }: {
-      where?: Record<string, unknown>;
+    findMany: jest.fn(async ({ where, take }: {
+      where?: Record<string, unknown> & { OR?: Array<Record<string, unknown>> };
       take?: number;
       orderBy?: object[];
     }) => {
       let rows = this.customers.filter((c) => {
         if (!where) return true;
+        if (where.businessId && c.businessId !== where.businessId) return false;
+        if (where.OR?.length) {
+          return where.OR.some((clause) => {
+            const createdAt = clause.createdAt as Date | { lt?: Date } | undefined;
+            if (
+              createdAt &&
+              typeof createdAt === 'object' &&
+              !(createdAt instanceof Date) &&
+              createdAt.lt
+            ) {
+              return c.createdAt.getTime() < createdAt.lt.getTime();
+            }
+            if (createdAt instanceof Date && typeof clause.id === 'object') {
+              const idClause = clause.id as { lt?: string };
+              return (
+                c.createdAt.getTime() === createdAt.getTime() &&
+                !!idClause.lt &&
+                c.id < idClause.lt
+              );
+            }
+            return false;
+          });
+        }
         return Object.entries(where).every(([k, v]) => {
-          if (k === 'OR') return true; // cursor clause — ignore in mock
+          if (k === 'OR') return true;
           return (c as Record<string, unknown>)[k] === v;
         });
       });
-      rows = rows.slice().sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      rows = rows.slice().sort((a, b) => {
+        const byTime = b.createdAt.getTime() - a.createdAt.getTime();
+        if (byTime !== 0) return byTime;
+        return b.id < a.id ? -1 : b.id > a.id ? 1 : 0;
+      });
       if (take) rows = rows.slice(0, take);
       return rows;
     }),
@@ -105,10 +135,14 @@ class MockPrismaService {
     }),
   };
 
-  readonly membership = {
-    findMany: jest.fn(async ({ where }: { where: { userId: string } }) =>
-      this.memberships.filter((m) => m.userId === where.userId),
-    ),
+  readonly business = {
+    findUnique: jest.fn(async ({ where }: { where: { walletAddress?: string; id?: string }; select?: { id?: boolean } }) => {
+      const row = this.businesses.find((b) =>
+        where.walletAddress ? b.walletAddress === where.walletAddress : b.id === where.id,
+      );
+      if (!row) return null;
+      return { id: row.id };
+    }),
   };
 
   async $connect() {}
@@ -161,9 +195,16 @@ function seedCustomer(prisma: MockPrismaService, biz = BIZ_A, overrides: Partial
   return c;
 }
 
-const ownerSession = (biz = BIZ_A): { Authorization: string } => ({
-  Authorization: `Bearer ${generateTestSessionToken({ userId: 'user_001', businessId: biz, role: 'owner' })}`,
-});
+const WALLET_A = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
+const WALLET_B = 'GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBWHF';
+const AUTH_SECRET = 'test-auth-secret-for-integration';
+
+const ownerSession = (biz = BIZ_A): { Cookie: string } => {
+  const wallet = biz === BIZ_B ? WALLET_B : WALLET_A;
+  const token = generateTestSessionCookie(wallet, AUTH_SECRET);
+  return { Cookie: `${DASHBOARD_SESSION_COOKIE}=${token}` };
+};
+
 
 // ─── Test setup ───────────────────────────────────────────────────────────────
 
@@ -174,6 +215,7 @@ describe('Customer API (integration)', () => {
 
   beforeEach(async () => {
     prisma = new MockPrismaService();
+    process.env.AUTH_SECRET = AUTH_SECRET;
     rawKey = await seedApiKey(prisma, BIZ_A);
 
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -256,6 +298,39 @@ describe('Customer API (integration)', () => {
         .get('/v1/customers?limit=101')
         .set(apiAuth())
         .expect(400);
+    });
+
+    it('200 — has_more=true and cursor returns remaining page', async () => {
+      const base = Date.now();
+      for (let i = 0; i < 3; i++) {
+        seedCustomer(prisma, BIZ_A, {
+          publicId: `cus_page_${i}`,
+          email: `page${i}@example.com`,
+          createdAt: new Date(base - i * 1000),
+        });
+      }
+
+      const page1 = await request(app.getHttpServer())
+        .get('/v1/customers?limit=2')
+        .set(apiAuth())
+        .expect(200);
+
+      expect(page1.body.data).toHaveLength(2);
+      expect(page1.body.has_more).toBe(true);
+      expect(page1.body.next_cursor).toEqual(expect.any(String));
+
+      const page2 = await request(app.getHttpServer())
+        .get(`/v1/customers?limit=2&cursor=${encodeURIComponent(page1.body.next_cursor)}`)
+        .set(apiAuth())
+        .expect(200);
+
+      expect(page2.body.data).toHaveLength(1);
+      expect(page2.body.has_more).toBe(false);
+      expect(page2.body.next_cursor).toBeNull();
+
+      const page1Ids = page1.body.data.map((c: { id: string }) => c.id);
+      const page2Ids = page2.body.data.map((c: { id: string }) => c.id);
+      expect(page1Ids).not.toEqual(expect.arrayContaining(page2Ids));
     });
 
     it('401 — missing API key', async () => {
