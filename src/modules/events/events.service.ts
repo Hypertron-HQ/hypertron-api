@@ -7,16 +7,25 @@
  *  - Each event stores an immutable snapshot of the payment at that moment
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { Payment, PaymentEvent } from '@prisma/client';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { generateId, PREFIXES } from '@/common/utils/id-generator';
+import {
+  WEBHOOK_DISPATCHER,
+  type WebhookDispatcher,
+} from '@/modules/webhooks/webhook-dispatcher';
 
 @Injectable()
 export class EventsService {
   private readonly logger = new Logger(EventsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional()
+    @Inject(WEBHOOK_DISPATCHER)
+    private readonly webhooks?: WebhookDispatcher,
+  ) {}
 
   /**
    * Appends an immutable event to the payment event log.
@@ -46,6 +55,8 @@ export class EventsService {
       'Payment event emitted',
     );
 
+    await this.dispatchWebhooks(event);
+
     return event;
   }
 
@@ -69,5 +80,27 @@ export class EventsService {
       where: { paymentId: payment.id, businessId },
       orderBy: { createdAt: 'asc' },
     });
+  }
+
+  /**
+   * Hands the event to the webhook queue. The event store is the source of
+   * truth, so a queue failure is logged and swallowed — it must never roll back
+   * a payment transition or fail the merchant's request.
+   */
+  private async dispatchWebhooks(event: PaymentEvent): Promise<void> {
+    if (!this.webhooks) return;
+
+    try {
+      await this.webhooks.dispatchEvent(event);
+    } catch (err) {
+      this.logger.error(
+        {
+          eventId: event.publicId,
+          eventType: event.type,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'Failed to enqueue webhook deliveries for event',
+      );
+    }
   }
 }

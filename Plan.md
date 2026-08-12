@@ -1433,13 +1433,14 @@ Each phase has a clear definition of done and can be merged and deployed indepen
 
 ### Phase 7 — Webhook system (Day 12–15)
 
-- [ ] Implement `WebhookEndpointService` CRUD with encrypted secret storage
-- [ ] Implement `WebhookSigner` with HMAC-SHA256
-- [ ] Implement `WebhookDeliveryService` with BullMQ enqueuing
-- [ ] Implement `WebhookProcessor` with retry schedule
-- [ ] Implement delivery observability routes (`GET /api/developer/webhook-endpoints/:id/deliveries`)
-- [ ] Implement test webhook endpoint (`POST /api/developer/webhook-endpoints/:id/test`)
-- [ ] Unit tests for signing; integration tests for delivery + retry; signature verification tests
+- [x] Implement `WebhookEndpointService` CRUD with encrypted secret storage
+- [x] Implement `WebhookSigner` with HMAC-SHA256
+- [x] Implement `WebhookDeliveryService` with BullMQ enqueuing
+- [x] Implement `WebhookProcessor` with retry schedule
+- [x] Implement delivery observability routes (`GET /api/developer/webhook-endpoints/:id/deliveries`)
+- [x] Implement manual retry route (`POST /api/developer/webhook-endpoints/:id/deliveries/:deliveryId/retry`)
+- [x] Implement test webhook endpoint (`POST /api/developer/webhook-endpoints/:id/test`)
+- [x] Unit tests for signing; integration tests for delivery + retry; signature verification tests
 
 ### Phase 8 — Observability & hardening (Day 15–17)
 
