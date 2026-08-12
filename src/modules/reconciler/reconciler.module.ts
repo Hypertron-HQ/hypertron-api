@@ -5,6 +5,7 @@ import { PaymentsModule } from '@/modules/payments/payments.module';
 import { EventsModule } from '@/modules/events/events.module';
 import { CustomersModule } from '@/modules/customers/customers.module';
 import { StellarModule } from '@/infrastructure/stellar/stellar.module';
+import { workersDisabled } from '@/common/config/queue.config';
 
 import { StellarVerifier } from './stellar-verifier';
 import { ReconcilerService } from './reconciler.service';
@@ -13,7 +14,7 @@ import { ExpiryProcessor } from './expiry.processor';
 import { ReconcilerScheduler } from './reconciler.scheduler';
 import { RECONCILER_QUEUE, EXPIRY_QUEUE } from './reconciler.constants';
 
-const disableWorkers = process.env.DISABLE_WORKERS === 'true';
+const disableWorkers = workersDisabled();
 
 @Module({
   imports: [

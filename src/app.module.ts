@@ -18,13 +18,20 @@ import { DeveloperModule } from './modules/developer/developer.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { ReconcilerModule } from './modules/reconciler/reconciler.module';
+import { WebhooksModule } from './modules/webhooks/webhooks.module';
 
 @Module({
   imports: [
     // ── Config (global) ────────────────────────────────────────────────────
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, databaseConfig, queueConfig, stellarConfig, securityConfig],
+      load: [
+        appConfig,
+        databaseConfig,
+        queueConfig,
+        stellarConfig,
+        securityConfig,
+      ],
       validationSchema: configValidationSchema,
       validationOptions: {
         abortEarly: true,
@@ -56,6 +63,8 @@ import { ReconcilerModule } from './modules/reconciler/reconciler.module';
     HealthModule,
     AuthModule,
     CustomersModule,
+    // Global — provides WEBHOOK_DISPATCHER to EventsService without a cycle.
+    WebhooksModule,
     DeveloperModule,
     PaymentsModule,
     ReconcilerModule,
