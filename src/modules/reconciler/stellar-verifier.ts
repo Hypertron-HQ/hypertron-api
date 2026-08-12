@@ -1,17 +1,27 @@
 /**
  * StellarVerifier — classic Horizon payment match checks (Plan §12.2).
  *
- * A record is a valid match only when ALL seven checks pass:
- *  destination, asset_code, asset_issuer, amount, memo, tx uniqueness, expiry.
+ * Works for Dev API `Payment` rows and dashboard `PaymentLink` rows via
+ * a shared match target shape.
  */
 
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { Environment, Payment, PaymentCurrency } from '@prisma/client';
+import type { Environment, PaymentCurrency } from '@prisma/client';
 
 import type { StellarConfig } from '@/common/config/stellar.config';
 import { compareDecimalStrings } from '@/common/utils/amount.util';
 import type { HorizonPaymentRecord } from '@/infrastructure/stellar/stellar-horizon.service';
+
+/** Minimal invoice shape for classic Horizon matching. */
+export interface PaymentMatchTarget {
+  linkMemo: string;
+  destinationAddress: string;
+  amount: string;
+  currency: string;
+  environment: Environment;
+  expiresAt: Date | null;
+}
 
 export type VerifyFailureCode =
   | 'wrong_asset'
@@ -27,19 +37,24 @@ export type VerifyFailureCode =
 
 export type VerifyResult =
   | { ok: true; payment: HorizonPaymentRecord }
-  | { ok: false; code: VerifyFailureCode; message: string; payment?: HorizonPaymentRecord };
+  | {
+      ok: false;
+      code: VerifyFailureCode;
+      message: string;
+      payment?: HorizonPaymentRecord;
+    };
 
 @Injectable()
 export class StellarVerifier {
   constructor(private readonly config: ConfigService) {}
 
   /**
-   * Scans Horizon records for the first valid match for `payment`.
+   * Scans Horizon records for the first valid match for `target`.
    * Memo-matched but invalid ops surface a typed failure (wrong asset/amount/…).
    * Unrelated ops are ignored.
    */
   verify(
-    payment: Payment,
+    target: PaymentMatchTarget,
     records: HorizonPaymentRecord[],
     knownHashes: Set<string>,
   ): VerifyResult {
@@ -47,13 +62,10 @@ export class StellarVerifier {
 
     for (const record of records) {
       if (!record.successful) continue;
-      if (record.memoType !== 'text' && record.memoType !== null) {
-        // Only text memos are used for hpl_ attribution
-      }
-      if (record.memo !== payment.linkMemo) continue;
+      if (record.memo !== target.linkMemo) continue;
 
       memoHit = record;
-      const check = this.checkRecord(payment, record, knownHashes);
+      const check = this.checkRecord(target, record, knownHashes);
       if (check.ok) return check;
       // Memo matched but failed a check — return that failure (don't keep scanning)
       return check;
@@ -77,7 +89,7 @@ export class StellarVerifier {
 
   /** Re-run the seven checks against a single already-found record. */
   checkRecord(
-    payment: Payment,
+    target: PaymentMatchTarget,
     record: HorizonPaymentRecord,
     knownHashes: Set<string>,
   ): VerifyResult {
@@ -91,17 +103,17 @@ export class StellarVerifier {
     }
 
     // 1. destination
-    if (record.to !== payment.destinationAddress) {
+    if (record.to !== target.destinationAddress) {
       return {
         ok: false,
         code: 'wrong_destination',
-        message: `Destination ${record.to} does not match ${payment.destinationAddress}`,
+        message: `Destination ${record.to} does not match ${target.destinationAddress}`,
         payment: record,
       };
     }
 
     // 2. asset code
-    const expectedCode = payment.currency;
+    const expectedCode = target.currency.toUpperCase();
     const actualCode =
       record.assetType === 'native' ? 'XLM' : (record.assetCode ?? '');
     if (actualCode !== expectedCode) {
@@ -115,8 +127,8 @@ export class StellarVerifier {
 
     // 3. asset issuer
     const expectedIssuer = this.expectedIssuer(
-      payment.currency,
-      payment.environment,
+      expectedCode,
+      target.environment,
     );
     if (expectedIssuer === null) {
       if (record.assetIssuer !== null) {
@@ -137,12 +149,12 @@ export class StellarVerifier {
     }
 
     // 4. amount (exact decimal match)
-    const cmp = compareDecimalStrings(record.amount, payment.amount);
+    const cmp = compareDecimalStrings(record.amount, target.amount);
     if (cmp < 0) {
       return {
         ok: false,
         code: 'insufficient_amount',
-        message: `Received ${record.amount}, expected ${payment.amount}`,
+        message: `Received ${record.amount}, expected ${target.amount}`,
         payment: record,
       };
     }
@@ -150,13 +162,13 @@ export class StellarVerifier {
       return {
         ok: false,
         code: 'wrong_amount',
-        message: `Received ${record.amount}, expected exact ${payment.amount}`,
+        message: `Received ${record.amount}, expected exact ${target.amount}`,
         payment: record,
       };
     }
 
     // 5. memo
-    if (record.memo !== payment.linkMemo) {
+    if (record.memo !== target.linkMemo) {
       return {
         ok: false,
         code: 'memo_mismatch',
@@ -176,7 +188,7 @@ export class StellarVerifier {
     }
 
     // 7. ledger close time before expiresAt
-    if (payment.expiresAt && record.createdAt > payment.expiresAt) {
+    if (target.expiresAt && record.createdAt > target.expiresAt) {
       return {
         ok: false,
         code: 'expired',

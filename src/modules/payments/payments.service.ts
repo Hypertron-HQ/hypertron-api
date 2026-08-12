@@ -251,7 +251,7 @@ export class PaymentsService {
 
   /**
    * Classic checkout destination: merchant G… only (never pool C…).
-   * Prefer Business.receiveAddress, then env STELLAR_*_DESTINATION_ADDRESS.
+   * Prefer Business.receiveAddress → login walletAddress → env STELLAR_*_DESTINATION.
    */
   private async resolveDestinationAddress(
     businessId: string,
@@ -259,7 +259,7 @@ export class PaymentsService {
   ): Promise<string> {
     const business = await this.prisma.business.findUnique({
       where: { id: businessId },
-      select: { receiveAddress: true },
+      select: { receiveAddress: true, walletAddress: true },
     });
     const stellar = this.config.get<StellarConfig>('stellar');
     const envDestination =
@@ -269,6 +269,7 @@ export class PaymentsService {
 
     const candidates = [
       business?.receiveAddress?.trim(),
+      business?.walletAddress?.trim(),
       envDestination?.trim(),
     ];
 

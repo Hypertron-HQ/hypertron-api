@@ -74,15 +74,19 @@ export class StellarHorizonService {
             memo_type?: string | null;
             successful?: boolean;
           };
+          transaction_successful?: boolean;
         };
 
-        // Prefer joined transaction attributes; fall back to a fetch.
+        // Prefer joined transaction_attr; fall back to fetching the tx.
         let memo: string | null = payment.transaction_attr?.memo ?? null;
         let memoType: string | null =
           payment.transaction_attr?.memo_type ?? null;
-        let successful = payment.transaction_attr?.successful ?? true;
+        let successful =
+          payment.transaction_attr?.successful ??
+          payment.transaction_successful ??
+          true;
 
-        if (payment.transaction_attr === undefined) {
+        if (memo === null && typeof payment.transaction === 'function') {
           try {
             const tx = await this.withRetry(() => payment.transaction());
             memo = tx.memo ?? null;

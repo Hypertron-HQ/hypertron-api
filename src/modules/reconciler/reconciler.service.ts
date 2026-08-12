@@ -2,7 +2,8 @@
  * ReconcilerService — drives PaymentStateMachine from Horizon matches (Plan §12).
  *
  * Responsibilities:
- *  - poll open (pending) payments
+ *  - poll open (pending) Dev API Payments
+ *  - poll unpaid dashboard PaymentLinks (UI Collect) not owned by a pending Payment
  *  - verify classic Horizon payments via StellarVerifier
  *  - pending → confirmed → (finality) → completed
  *  - sync PaymentLink paidAt / paymentTxHash for dashboard
@@ -15,7 +16,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { PaymentStatus } from '@prisma/client';
-import type { Payment } from '@prisma/client';
+import type { Environment, Payment, PaymentLink } from '@prisma/client';
 
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import {
@@ -25,6 +26,7 @@ import { CircuitOpenError } from '@/infrastructure/stellar/circuit-breaker';
 import { PaymentStateMachine } from '@/modules/payments/payment-state-machine';
 import { addDecimalStrings } from '@/common/utils/amount.util';
 import type { StellarConfig } from '@/common/config/stellar.config';
+import type { AppConfig } from '@/common/config/app.config';
 import { StateTransitionException } from '@/common/exceptions/hypertron.exception';
 
 import { StellarVerifier } from './stellar-verifier';
@@ -41,7 +43,8 @@ export type ReconcileOutcome =
   | 'expired'
   | 'skipped'
   | 'no_match'
-  | 'horizon_unavailable';
+  | 'horizon_unavailable'
+  | 'link_paid';
 
 @Injectable()
 export class ReconcilerService {
@@ -56,8 +59,15 @@ export class ReconcilerService {
     @InjectQueue(RECONCILER_QUEUE) private readonly queue: Queue,
   ) {}
 
-  /** Cron entry: reconcile every open pending payment. */
-  async pollOpenPayments(): Promise<{ processed: number; outcomes: Record<string, number> }> {
+  /**
+   * Cron entry: reconcile Dev API pending Payments, then unpaid UI PaymentLinks.
+   */
+  async pollOpenPayments(): Promise<{
+    processed: number;
+    outcomes: Record<string, number>;
+    linksProcessed: number;
+    linkOutcomes: Record<string, number>;
+  }> {
     const open = await this.prisma.payment.findMany({
       where: { status: PaymentStatus.pending },
       orderBy: { createdAt: 'asc' },
@@ -77,11 +87,85 @@ export class ReconcilerService {
       outcomes[result] = (outcomes[result] ?? 0) + 1;
     }
 
+    const linkResult = await this.pollUnpaidPaymentLinks();
+
     this.logger.log(
-      { processed: open.length, outcomes },
+      {
+        processed: open.length,
+        outcomes,
+        linksProcessed: linkResult.processed,
+        linkOutcomes: linkResult.outcomes,
+      },
       'poll-open-payments finished',
     );
-    return { processed: open.length, outcomes };
+    return {
+      processed: open.length,
+      outcomes,
+      linksProcessed: linkResult.processed,
+      linkOutcomes: linkResult.outcomes,
+    };
+  }
+
+  /**
+   * Dashboard Collect links: PaymentLink rows with no paidAt, not already
+   * owned by a pending/confirmed Dev API Payment.
+   */
+  async pollUnpaidPaymentLinks(): Promise<{
+    processed: number;
+    outcomes: Record<string, number>;
+  }> {
+    const now = new Date();
+    // Keep the DB filter loose — Prisma/Mongo optional-null matching is unreliable.
+    // Filter unpaid / classic / non-expired in process.
+    const candidates = await this.prisma.paymentLink.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 300,
+    });
+
+    const openLinks = candidates.filter((link) => {
+      if (link.paidAt || link.paymentTxHash) return false;
+      if (!link.amount?.trim()) return false;
+      if (!isClassicStellarAddress(link.destinationAddress)) return false;
+      if (link.expiresAt && link.expiresAt.getTime() <= now.getTime()) return false;
+      return true;
+    }).slice(0, 200);
+
+    // PaymentLinkIds already covered by an in-flight Dev API Payment
+    const ownedLinkIds = new Set(
+      openLinks.length === 0
+        ? []
+        : (
+            await this.prisma.payment.findMany({
+              where: {
+                paymentLinkId: { in: openLinks.map((l) => l.id) },
+                status: {
+                  in: [
+                    PaymentStatus.pending,
+                    PaymentStatus.confirmed,
+                    PaymentStatus.created,
+                  ],
+                },
+              },
+              select: { paymentLinkId: true },
+            })
+          ).map((p) => p.paymentLinkId),
+    );
+
+    const outcomes: Record<string, number> = {};
+    let processed = 0;
+
+    for (const link of openLinks) {
+      if (ownedLinkIds.has(link.id)) {
+        outcomes.skipped = (outcomes.skipped ?? 0) + 1;
+        continue;
+      }
+
+      processed += 1;
+      const result = await this.reconcilePaymentLink(link);
+      outcomes[result] = (outcomes[result] ?? 0) + 1;
+    }
+
+    return { processed, outcomes };
   }
 
   /** Reconcile a single pending payment against Horizon. */
@@ -124,10 +208,21 @@ export class ReconcilerService {
 
     const knownHashes = await this.loadForeignHashes(
       records.map((r) => r.transactionHash),
-      payment.id,
+      { excludePaymentId: payment.id },
     );
 
-    const result = this.verifier.verify(payment, records, knownHashes);
+    const result = this.verifier.verify(
+      {
+        linkMemo: payment.linkMemo,
+        destinationAddress: payment.destinationAddress,
+        amount: payment.amount,
+        currency: payment.currency,
+        environment: payment.environment,
+        expiresAt: payment.expiresAt,
+      },
+      records,
+      knownHashes,
+    );
 
     if (!result.ok) {
       if (result.code === 'no_match') return 'no_match';
@@ -205,6 +300,98 @@ export class ReconcilerService {
       }
       throw err;
     }
+  }
+
+  /**
+   * Mark a dashboard-only PaymentLink paid when Horizon matches.
+   * Does not create Dev API Payment lifecycle events (no webhook until linked).
+   */
+  async reconcilePaymentLink(link: PaymentLink): Promise<ReconcileOutcome> {
+    if (link.paidAt || link.paymentTxHash) return 'skipped';
+    if (!link.amount) return 'skipped';
+    if (!isClassicStellarAddress(link.destinationAddress)) return 'skipped';
+
+    const environment = await this.resolveLinkEnvironment(link.id);
+    const stellar = this.config.get<StellarConfig>('stellar')!;
+
+    let records;
+    try {
+      records = await this.horizon.listPaymentsForAccount(
+        link.destinationAddress,
+        environment,
+        stellar.reconcilerLookback,
+      );
+    } catch (err) {
+      if (err instanceof CircuitOpenError) {
+        this.logger.warn(
+          { environment, linkId: link.id },
+          'Horizon circuit open — skipping link reconcile',
+        );
+        return 'horizon_unavailable';
+      }
+      this.logger.error(
+        {
+          linkId: link.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'Horizon query failed for PaymentLink',
+      );
+      return 'horizon_unavailable';
+    }
+
+    const knownHashes = await this.loadForeignHashes(
+      records.map((r) => r.transactionHash),
+      { excludeLinkId: link.id },
+    );
+
+    const result = this.verifier.verify(
+      {
+        linkMemo: link.linkMemo,
+        destinationAddress: link.destinationAddress,
+        amount: link.amount,
+        currency: link.currency,
+        environment,
+        expiresAt: link.expiresAt,
+      },
+      records,
+      knownHashes,
+    );
+
+    if (!result.ok) {
+      if (result.code === 'duplicate_hash') {
+        this.logger.error(
+          { linkId: link.id, tx: result.payment?.transactionHash },
+          'CRITICAL: duplicate tx hash on PaymentLink — skipping',
+        );
+        return 'skipped';
+      }
+      if (result.code === 'expired') return 'expired';
+      return 'no_match';
+    }
+
+    // Re-read then write — avoid Prisma/Mongo `{ field: null }` missing-field traps
+    const fresh = await this.prisma.paymentLink.findUnique({
+      where: { id: link.id },
+    });
+    if (!fresh || fresh.paidAt || fresh.paymentTxHash) return 'skipped';
+
+    await this.prisma.paymentLink.update({
+      where: { id: link.id },
+      data: {
+        paymentTxHash: result.payment.transactionHash,
+        paidAt: new Date(),
+      },
+    });
+
+    this.logger.log(
+      {
+        linkId: link.id,
+        memo: link.linkMemo,
+        tx: result.payment.transactionHash,
+      },
+      'PaymentLink marked paid from Horizon match',
+    );
+    return 'link_paid';
   }
 
   /** Delayed finality job: re-verify tx still successful → completed. */
@@ -347,24 +534,56 @@ export class ReconcilerService {
     });
   }
 
+  /**
+   * Horizon network for a dashboard link: use linked Payment.environment if any,
+   * else test locally / live in production.
+   */
+  private async resolveLinkEnvironment(linkId: string): Promise<Environment> {
+    const linked = await this.prisma.payment.findFirst({
+      where: { paymentLinkId: linkId },
+      select: { environment: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (linked) return linked.environment;
+
+    const app = this.config.get<AppConfig>('app');
+    return app?.nodeEnv === 'production' ? 'live' : 'test';
+  }
+
   private async loadForeignHashes(
     hashes: string[],
-    selfId: string,
+    opts?: { excludePaymentId?: string; excludeLinkId?: string },
   ): Promise<Set<string>> {
     if (hashes.length === 0) return new Set();
     const unique = [...new Set(hashes)];
-    const rows = await this.prisma.payment.findMany({
-      where: {
-        transactionHash: { in: unique },
-        NOT: { id: selfId },
-      },
-      select: { transactionHash: true },
-    });
-    return new Set(
-      rows
-        .map((r) => r.transactionHash)
-        .filter((h): h is string => typeof h === 'string'),
-    );
+
+    const [paymentRows, linkRows] = await Promise.all([
+      this.prisma.payment.findMany({
+        where: {
+          transactionHash: { in: unique },
+          ...(opts?.excludePaymentId
+            ? { NOT: { id: opts.excludePaymentId } }
+            : {}),
+        },
+        select: { transactionHash: true },
+      }),
+      this.prisma.paymentLink.findMany({
+        where: {
+          paymentTxHash: { in: unique },
+          ...(opts?.excludeLinkId ? { NOT: { id: opts.excludeLinkId } } : {}),
+        },
+        select: { paymentTxHash: true },
+      }),
+    ]);
+
+    const out = new Set<string>();
+    for (const r of paymentRows) {
+      if (r.transactionHash) out.add(r.transactionHash);
+    }
+    for (const r of linkRows) {
+      if (r.paymentTxHash) out.add(r.paymentTxHash);
+    }
+    return out;
   }
 }
 
@@ -373,4 +592,8 @@ function isUniqueViolation(err: unknown): boolean {
   const code = (err as { code?: string }).code;
   // Prisma Mongo unique / Prisma P2002
   return code === 'P2002';
+}
+
+function isClassicStellarAddress(address: string): boolean {
+  return address.startsWith('G') && address.length === 56;
 }

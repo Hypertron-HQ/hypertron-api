@@ -14,7 +14,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { getQueueToken } from '@nestjs/bullmq';
 import { PaymentStatus } from '@prisma/client';
-import type { Payment } from '@prisma/client';
+import type { Payment, PaymentLink } from '@prisma/client';
 
 import { ReconcilerService } from '@/modules/reconciler/reconciler.service';
 import { StellarVerifier } from '@/modules/reconciler/stellar-verifier';
@@ -83,11 +83,34 @@ function makeXlmRecord(
   };
 }
 
+function makeLink(overrides: Partial<PaymentLink> = {}): PaymentLink {
+  return {
+    id: 'ui_link_1',
+    businessId: 'biz_1',
+    amount: '1.00',
+    currency: 'XLM',
+    purpose: 'UI collect',
+    clientName: null,
+    workflowStage: null,
+    metadata: null,
+    paymentMethods: ['wallet', 'qr'],
+    expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+    linkMemo: 'hpl_ui_link_memo_1',
+    destinationAddress: DEST,
+    paidAt: null,
+    paymentTxHash: null,
+    createdAt: new Date(),
+    ...overrides,
+  };
+}
+
 describe('ReconcilerService (integration)', () => {
   let service: ReconcilerService;
   let payment: Payment;
+  let link: PaymentLink;
   let horizonPayments: HorizonPaymentRecord[];
   let foreignHashes: { transactionHash: string }[];
+  let foreignLinkHashes: { paymentTxHash: string }[];
   let queueAdd: jest.Mock;
   let paymentLinkUpdate: jest.Mock;
   let customerUpdate: jest.Mock;
@@ -96,10 +119,20 @@ describe('ReconcilerService (integration)', () => {
 
   beforeEach(async () => {
     payment = makePayment();
+    link = makeLink();
     horizonPayments = [makeXlmRecord()];
     foreignHashes = [];
+    foreignLinkHashes = [];
     queueAdd = jest.fn().mockResolvedValue({});
-    paymentLinkUpdate = jest.fn().mockResolvedValue({});
+    paymentLinkUpdate = jest.fn().mockImplementation(
+      async (args: { where: { id: string }; data: Partial<PaymentLink> }) => {
+        if (args.where.id === link.id) Object.assign(link, args.data);
+        if (args.where.id === payment.paymentLinkId) {
+          /* API-linked link sync — no-op store */
+        }
+        return { ...link, ...args.data };
+      },
+    );
     customerUpdate = jest.fn().mockResolvedValue({});
     customerFind = jest.fn().mockResolvedValue({
       id: 'oid_cus_1',
@@ -110,13 +143,21 @@ describe('ReconcilerService (integration)', () => {
     const prisma = {
       payment: {
         findUnique: jest.fn().mockImplementation(async () => ({ ...payment })),
+        findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockImplementation(async (args: {
-          where?: { transactionHash?: { in?: string[] }; status?: unknown };
+          where?: {
+            transactionHash?: { in?: string[] };
+            status?: unknown;
+            paymentLinkId?: { in?: string[] };
+          };
         }) => {
           if (args.where?.transactionHash?.in) {
             return foreignHashes.filter((r) =>
               args.where!.transactionHash!.in!.includes(r.transactionHash),
             );
+          }
+          if (args.where?.paymentLinkId?.in) {
+            return [];
           }
           if (args.where?.status === PaymentStatus.pending ||
               (args.where?.status as { in?: PaymentStatus[] })?.in) {
@@ -151,7 +192,20 @@ describe('ReconcilerService (integration)', () => {
           },
         ),
       },
-      paymentLink: { update: paymentLinkUpdate },
+      paymentLink: {
+        update: paymentLinkUpdate,
+        findUnique: jest.fn().mockImplementation(async () => ({ ...link })),
+        findMany: jest.fn().mockImplementation(async (args: {
+          where?: { paymentTxHash?: { in?: string[] }; paidAt?: null };
+        }) => {
+          if (args.where?.paymentTxHash?.in) {
+            return foreignLinkHashes.filter((r) =>
+              args.where!.paymentTxHash!.in!.includes(r.paymentTxHash),
+            );
+          }
+          return link.paidAt ? [] : [{ ...link }];
+        }),
+      },
       customer: {
         findUnique: customerFind,
         update: customerUpdate,
@@ -197,6 +251,9 @@ describe('ReconcilerService (integration)', () => {
                   finalityDelayMs: 100,
                   reconcilerLookback: 50,
                 };
+              }
+              if (key === 'app') {
+                return { nodeEnv: 'development' };
               }
               return undefined;
             },
@@ -308,5 +365,37 @@ describe('ReconcilerService (integration)', () => {
     const outcome = await service.reconcilePayment(payment);
     expect(outcome).toBe('no_match');
     expect(payment.status).toBe(PaymentStatus.pending);
+  });
+
+  describe('dashboard PaymentLink reconciliation', () => {
+    it('matching Horizon payment → link_paid', async () => {
+      horizonPayments = [
+        makeXlmRecord({ memo: link.linkMemo, amount: '1.00' }),
+      ];
+      const outcome = await service.reconcilePaymentLink(link);
+      expect(outcome).toBe('link_paid');
+      expect(link.paidAt).toBeTruthy();
+      expect(link.paymentTxHash).toBe('abc123txhash');
+      expect(paymentLinkUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'ui_link_1' },
+          data: expect.objectContaining({ paymentTxHash: 'abc123txhash' }),
+        }),
+      );
+    });
+
+    it('no matching memo → no_match', async () => {
+      horizonPayments = [makeXlmRecord({ memo: 'hpl_other' })];
+      const outcome = await service.reconcilePaymentLink(link);
+      expect(outcome).toBe('no_match');
+      expect(link.paidAt).toBeNull();
+    });
+
+    it('already paid → skipped', async () => {
+      link.paidAt = new Date();
+      link.paymentTxHash = 'already';
+      const outcome = await service.reconcilePaymentLink(link);
+      expect(outcome).toBe('skipped');
+    });
   });
 });

@@ -70,12 +70,14 @@ export class PaymentStateMachine {
   // ─── pending → confirmed ───────────────────────────────────────────────────
 
   async toConfirmed(paymentInternalId: string, tx: TransactionData): Promise<Payment> {
+    // CAS is status=pending only. Do NOT filter `transactionHash: null` here:
+    // Prisma/Mongo often omits unset optional fields, so `{ transactionHash: null }`
+    // matches 0 rows and the reconciler would skip forever after a Horizon match.
+    // Duplicate hashes are blocked by the unique index on transactionHash.
     return this.transition({
       paymentInternalId,
       fromStates: ALLOWED_FROM.confirmed,
       toStatus: PaymentStatus.confirmed,
-      // Compare-and-set: only claim the tx hash while still unset (Plan §12.3)
-      whereExtra: { transactionHash: null },
       extraData: {
         transactionHash: tx.transactionHash,
         payerAddress: tx.payerAddress,
