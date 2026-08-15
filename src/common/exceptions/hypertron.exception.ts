@@ -38,7 +38,12 @@ export class HypertronException extends HttpException {
 export class InvalidRequestException extends HypertronException {
   constructor(code: string, message: string, param?: string) {
     super(
-      { type: 'invalid_request_error', code, message, ...(param ? { param } : {}) },
+      {
+        type: 'invalid_request_error',
+        code,
+        message,
+        ...(param ? { param } : {}),
+      },
       HttpStatus.BAD_REQUEST,
     );
   }
@@ -51,7 +56,10 @@ export class AuthenticationException extends HypertronException {
     code = 'invalid_api_key',
     message = 'No valid API key provided.',
   ) {
-    super({ type: 'authentication_error', code, message }, HttpStatus.UNAUTHORIZED);
+    super(
+      { type: 'authentication_error', code, message },
+      HttpStatus.UNAUTHORIZED,
+    );
   }
 }
 
@@ -137,7 +145,10 @@ export class ApiException extends HypertronException {
     code = 'api_error',
     message = 'An unexpected error occurred. Please try again later.',
   ) {
-    super({ type: 'api_error', code, message }, HttpStatus.INTERNAL_SERVER_ERROR);
+    super(
+      { type: 'api_error', code, message },
+      HttpStatus.INTERNAL_SERVER_ERROR,
+    );
   }
 }
 

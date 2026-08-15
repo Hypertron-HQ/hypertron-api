@@ -120,7 +120,11 @@ export class ApiKeysController {
       throw new ResourceNotFoundException('api_key', id);
     }
 
-    const result = await this.apiKeyService.rotate(id, user.businessId, current.name);
+    const result = await this.apiKeyService.rotate(
+      id,
+      user.businessId,
+      current.name,
+    );
     if (!result) {
       throw new ResourceNotFoundException('api_key', id);
     }

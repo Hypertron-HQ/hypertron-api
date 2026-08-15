@@ -33,19 +33,29 @@ export class CustomersService {
   }
 
   /** Cursor-paginated list of customers for a merchant. */
-  async findAll(query: ListCustomersDto, businessId: string): Promise<CustomerPage> {
+  async findAll(
+    query: ListCustomersDto,
+    businessId: string,
+  ): Promise<CustomerPage> {
     const limit = query.limit ?? 25;
     const cursor = query.cursor ? decodeCursor(query.cursor) : null;
 
     // Fetch limit+1 to determine has_more
-    const rows = await this.repo.findAll({ businessId, limit: limit + 1, cursor });
+    const rows = await this.repo.findAll({
+      businessId,
+      limit: limit + 1,
+      cursor,
+    });
 
     const hasMore = rows.length > limit;
     const data = hasMore ? rows.slice(0, limit) : rows;
     const last = data[data.length - 1];
     const nextCursor =
       hasMore && last
-        ? Buffer.from(JSON.stringify({ t: last.createdAt.toISOString(), id: last.id }), 'utf8').toString('base64url')
+        ? Buffer.from(
+            JSON.stringify({ t: last.createdAt.toISOString(), id: last.id }),
+            'utf8',
+          ).toString('base64url')
         : null;
 
     return { data, hasMore, nextCursor };

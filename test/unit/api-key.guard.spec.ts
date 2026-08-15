@@ -16,7 +16,9 @@ import type { ApiKey } from '@prisma/client';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function buildVerifyResult(overrides: Partial<Omit<ApiKey, 'secretHash'>> = {}) {
+function buildVerifyResult(
+  overrides: Partial<Omit<ApiKey, 'secretHash'>> = {},
+) {
   return {
     record: {
       id: 'mongo_id_1',
@@ -81,7 +83,7 @@ describe('ApiKeyGuard', () => {
     mockApiKeyService.verify.mockResolvedValue(verifyResult);
 
     const ctx = buildContext('Bearer sk_test_validtoken');
-    const request = ctx.switchToHttp().getRequest() as Record<string, unknown>;
+    const request = ctx.switchToHttp().getRequest();
 
     const result = await guard.canActivate(ctx);
 
@@ -94,11 +96,14 @@ describe('ApiKeyGuard', () => {
   });
 
   it('attaches correct environment from a live key', async () => {
-    const verifyResult = buildVerifyResult({ environment: 'live', keyPrefix: 'sk_live_' });
+    const verifyResult = buildVerifyResult({
+      environment: 'live',
+      keyPrefix: 'sk_live_',
+    });
     mockApiKeyService.verify.mockResolvedValue(verifyResult);
 
     const ctx = buildContext('Bearer sk_live_validtoken');
-    const request = ctx.switchToHttp().getRequest() as Record<string, unknown>;
+    const request = ctx.switchToHttp().getRequest();
 
     await guard.canActivate(ctx);
 
@@ -132,7 +137,9 @@ describe('ApiKeyGuard', () => {
   it('throws AuthenticationException (missing_api_key) when Authorization header is absent', async () => {
     const ctx = buildContext(); // no header
 
-    await expect(guard.canActivate(ctx)).rejects.toThrow(AuthenticationException);
+    await expect(guard.canActivate(ctx)).rejects.toThrow(
+      AuthenticationException,
+    );
     await expect(guard.canActivate(ctx)).rejects.toMatchObject({
       payload: { code: 'missing_api_key' },
     });
@@ -141,7 +148,9 @@ describe('ApiKeyGuard', () => {
   it('throws AuthenticationException when scheme is not Bearer', async () => {
     const ctx = buildContext('Basic dXNlcjpwYXNz');
 
-    await expect(guard.canActivate(ctx)).rejects.toThrow(AuthenticationException);
+    await expect(guard.canActivate(ctx)).rejects.toThrow(
+      AuthenticationException,
+    );
     await expect(guard.canActivate(ctx)).rejects.toMatchObject({
       payload: { code: 'missing_api_key' },
     });
@@ -150,13 +159,17 @@ describe('ApiKeyGuard', () => {
   it('throws AuthenticationException when token is empty after Bearer', async () => {
     const ctx = buildContext('Bearer ');
 
-    await expect(guard.canActivate(ctx)).rejects.toThrow(AuthenticationException);
+    await expect(guard.canActivate(ctx)).rejects.toThrow(
+      AuthenticationException,
+    );
   });
 
   it('throws AuthenticationException when Authorization header is an empty string', async () => {
     const ctx = buildContext('');
 
-    await expect(guard.canActivate(ctx)).rejects.toThrow(AuthenticationException);
+    await expect(guard.canActivate(ctx)).rejects.toThrow(
+      AuthenticationException,
+    );
   });
 
   // ─── Invalid key (service returns null) ───────────────────────────────────
@@ -166,7 +179,9 @@ describe('ApiKeyGuard', () => {
 
     const ctx = buildContext('Bearer sk_test_boguskey');
 
-    await expect(guard.canActivate(ctx)).rejects.toThrow(AuthenticationException);
+    await expect(guard.canActivate(ctx)).rejects.toThrow(
+      AuthenticationException,
+    );
     await expect(guard.canActivate(ctx)).rejects.toMatchObject({
       payload: { code: 'invalid_api_key' },
     });
@@ -177,7 +192,9 @@ describe('ApiKeyGuard', () => {
 
     const ctx = buildContext('Bearer sk_live_revokedtoken');
 
-    await expect(guard.canActivate(ctx)).rejects.toThrow(AuthenticationException);
+    await expect(guard.canActivate(ctx)).rejects.toThrow(
+      AuthenticationException,
+    );
   });
 
   // ─── HTTP status codes ─────────────────────────────────────────────────────

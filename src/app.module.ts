@@ -18,6 +18,8 @@ import { DeveloperModule } from './modules/developer/developer.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { ReconcilerModule } from './modules/reconciler/reconciler.module';
+import { InternalModule } from './modules/internal/internal.module';
+import { CheckoutLinksModule } from './modules/checkout-links/checkout-links.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 
 @Module({
@@ -68,6 +70,8 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     DeveloperModule,
     PaymentsModule,
     ReconcilerModule,
+    InternalModule,
+    CheckoutLinksModule,
   ],
 })
 export class AppModule {}

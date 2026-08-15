@@ -20,7 +20,7 @@ export interface CreatePaymentInput {
   customerId?: string | null;
   metadata?: Record<string, string>;
   checkoutUrl: string;
-  paymentLinkId: string;
+  checkoutLinkId: string;
   linkMemo: string;
   destinationAddress: string;
   expiresAt?: Date | null;
@@ -36,13 +36,16 @@ export interface CursorPage<T> {
 
 /** Encodes a cursor from createdAt + internal id (opaque to clients). */
 export function encodeCursor(createdAt: Date, id: string): string {
-  return Buffer.from(JSON.stringify({ t: createdAt.toISOString(), id }), 'utf8').toString(
-    'base64url',
-  );
+  return Buffer.from(
+    JSON.stringify({ t: createdAt.toISOString(), id }),
+    'utf8',
+  ).toString('base64url');
 }
 
 /** Decodes a cursor. Returns null if malformed. */
-export function decodeCursor(cursor: string): { createdAt: Date; id: string } | null {
+export function decodeCursor(
+  cursor: string,
+): { createdAt: Date; id: string } | null {
   try {
     const raw = Buffer.from(cursor, 'base64url').toString('utf8');
     const parsed = JSON.parse(raw) as { t: string; id: string };
@@ -70,7 +73,7 @@ export class PaymentsRepository {
         customerId: input.customerId ?? null,
         metadata: (input.metadata as object) ?? {},
         checkoutUrl: input.checkoutUrl,
-        paymentLinkId: input.paymentLinkId,
+        checkoutLinkId: input.checkoutLinkId,
         linkMemo: input.linkMemo,
         destinationAddress: input.destinationAddress,
         expiresAt: input.expiresAt ?? null,

@@ -28,7 +28,9 @@ export const MERCHANT_CONTEXT_KEY = 'merchant';
 
 export const CurrentMerchant = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): MerchantContext => {
-    const request = ctx.switchToHttp().getRequest<Request & { merchant: MerchantContext }>();
+    const request = ctx
+      .switchToHttp()
+      .getRequest<Request & { merchant: MerchantContext }>();
     return request.merchant;
   },
 );

@@ -28,12 +28,12 @@ import { StateTransitionException } from '@/common/exceptions/hypertron.exceptio
 // ─── Allowed from-states per transition ──────────────────────────────────────
 
 const ALLOWED_FROM: Record<string, PaymentStatus[]> = {
-  pending:   [PaymentStatus.created],
+  pending: [PaymentStatus.created],
   confirmed: [PaymentStatus.pending],
   completed: [PaymentStatus.confirmed],
-  failed:    [PaymentStatus.pending, PaymentStatus.confirmed],
-  expired:   [PaymentStatus.created, PaymentStatus.pending],
-  canceled:  [PaymentStatus.created, PaymentStatus.pending],
+  failed: [PaymentStatus.pending, PaymentStatus.confirmed],
+  expired: [PaymentStatus.created, PaymentStatus.pending],
+  canceled: [PaymentStatus.created, PaymentStatus.pending],
 };
 
 // ─── TransactionData for confirmed transition ─────────────────────────────────
@@ -69,7 +69,10 @@ export class PaymentStateMachine {
 
   // ─── pending → confirmed ───────────────────────────────────────────────────
 
-  async toConfirmed(paymentInternalId: string, tx: TransactionData): Promise<Payment> {
+  async toConfirmed(
+    paymentInternalId: string,
+    tx: TransactionData,
+  ): Promise<Payment> {
     // CAS is status=pending only. Do NOT filter `transactionHash: null` here:
     // Prisma/Mongo often omits unset optional fields, so `{ transactionHash: null }`
     // matches 0 rows and the reconciler would skip forever after a Horizon match.

@@ -76,7 +76,10 @@ export async function hashApiKey(
 /**
  * Verifies a raw API key against its stored bcrypt hash.
  */
-export async function verifyApiKey(rawKey: string, hash: string): Promise<boolean> {
+export async function verifyApiKey(
+  rawKey: string,
+  hash: string,
+): Promise<boolean> {
   return bcrypt.compare(rawKey, hash);
 }
 
@@ -108,9 +111,11 @@ export function encryptSecret(plaintext: string, key: Buffer): string {
     cipher.final(),
   ]);
   const tag = cipher.getAuthTag();
-  return [iv.toString('hex'), tag.toString('hex'), ciphertext.toString('hex')].join(
-    ENVELOPE_SEP,
-  );
+  return [
+    iv.toString('hex'),
+    tag.toString('hex'),
+    ciphertext.toString('hex'),
+  ].join(ENVELOPE_SEP);
 }
 
 /**
@@ -141,9 +146,10 @@ export function decryptSecret(envelope: string, key: Buffer): string {
   const decipher = crypto.createDecipheriv(AES_ALGO, key, iv);
   decipher.setAuthTag(tag);
 
-  return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString(
-    'utf8',
-  );
+  return Buffer.concat([
+    decipher.update(ciphertext),
+    decipher.final(),
+  ]).toString('utf8');
 }
 
 // ─── Webhook HMAC signing ──────────────────────────────────────────────────────

@@ -81,7 +81,10 @@ export function currencyMaxPrecision(currency: SupportedCurrency): number {
  * Validates `value` as a payment amount for the specified currency.
  * Combines format validation and precision checking.
  */
-export function isValidPaymentAmount(value: string, currency: SupportedCurrency): boolean {
+export function isValidPaymentAmount(
+  value: string,
+  currency: SupportedCurrency,
+): boolean {
   if (!isValidDecimalString(value)) return false;
   return checkPrecision(value, currencyMaxPrecision(currency));
 }

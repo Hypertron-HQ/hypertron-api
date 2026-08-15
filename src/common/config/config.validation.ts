@@ -36,15 +36,28 @@ export const configValidationSchema = Joi.object({
   STELLAR_EURC_ISSUER_TESTNET: Joi.string().default(''),
   STELLAR_EURC_ISSUER_MAINNET: Joi.string().default(''),
   STELLAR_FINALITY_DELAY_MS: Joi.number().integer().min(0).default(5000),
-  STELLAR_RECONCILER_LOOKBACK: Joi.number().integer().min(1).max(200).default(50),
+  STELLAR_RECONCILER_LOOKBACK: Joi.number()
+    .integer()
+    .min(1)
+    .max(200)
+    .default(50),
   DISABLE_WORKERS: Joi.boolean().truthy('true').falsy('false').default(false),
 
   // ── Security ──────────────────────────────────────────────────────────────
-  AUTH_SECRET: Joi.string().min(16).when('NODE_ENV', {
-    is: 'production',
-    then: Joi.required(),
-    otherwise: Joi.string().default('dev-auth-secret-change-me-32b'),
-  }),
+  AUTH_SECRET: Joi.string()
+    .min(16)
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.required(),
+      otherwise: Joi.string().default('dev-auth-secret-change-me-32b'),
+    }),
+  INTERNAL_SERVICE_TOKEN: Joi.string()
+    .min(16)
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.required(),
+      otherwise: Joi.string().default('dev-internal-service-token-change-me'),
+    }),
   API_KEY_SALT_ROUNDS: Joi.number().integer().min(10).max(14).default(12),
   WEBHOOK_SECRET_ENCRYPTION_KEY: Joi.string()
     .pattern(/^[0-9a-f]{64}$/)
@@ -57,10 +70,7 @@ export const configValidationSchema = Joi.object({
     }),
 
   // ── Rate limiting ─────────────────────────────────────────────────────────
-  RATE_LIMIT_PAYMENT_CREATE_PER_MIN: Joi.number()
-    .integer()
-    .min(1)
-    .default(60),
+  RATE_LIMIT_PAYMENT_CREATE_PER_MIN: Joi.number().integer().min(1).default(60),
   RATE_LIMIT_READ_PER_MIN: Joi.number().integer().min(1).default(300),
   RATE_LIMIT_DASHBOARD_PER_MIN: Joi.number().integer().min(1).default(120),
 });

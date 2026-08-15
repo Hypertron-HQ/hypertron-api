@@ -61,7 +61,10 @@ export class PaymentsController {
     required: true,
   })
   @ApiResponse({ status: 201, description: 'Payment created' })
-  @ApiResponse({ status: 409, description: 'Idempotency key reused with different body' })
+  @ApiResponse({
+    status: 409,
+    description: 'Idempotency key reused with different body',
+  })
   async create(
     @Body() dto: CreatePaymentDto,
     @CurrentMerchant() merchant: MerchantContext,
@@ -106,7 +109,10 @@ export class PaymentsController {
   @ApiOperation({ summary: 'Cancel a payment' })
   @ApiParam({ name: 'id', description: 'Payment publicId (pay_...)' })
   @ApiResponse({ status: 200, description: 'Canceled payment' })
-  @ApiResponse({ status: 409, description: 'Payment cannot be canceled from current state' })
+  @ApiResponse({
+    status: 409,
+    description: 'Payment cannot be canceled from current state',
+  })
   async cancel(
     @Param('id') id: string,
     @CurrentMerchant() merchant: MerchantContext,

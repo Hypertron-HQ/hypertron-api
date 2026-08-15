@@ -33,7 +33,7 @@ function makePayment(overrides: Partial<Payment> = {}): Payment {
     customerId: null,
     metadata: {},
     checkoutUrl: 'http://localhost:3000/pay/x',
-    paymentLinkId: 'link_1',
+    checkoutLinkId: 'link_1',
     linkMemo: MEMO,
     destinationAddress: DEST,
     payerAddress: null,
