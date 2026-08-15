@@ -4,11 +4,13 @@ import {
   HealthCheckService,
   PrismaHealthIndicator,
 } from '@nestjs/terminus';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { PrismaService } from '../infrastructure/prisma/prisma.service';
 
 @ApiTags('Health')
 @Controller('health')
+@SkipThrottle()
 export class HealthController {
   constructor(
     private readonly health: HealthCheckService,
@@ -23,6 +25,11 @@ export class HealthController {
     description:
       'Returns process health. Database check is informational — a degraded DB does not cause a 503.',
   })
+  @ApiResponse({
+    status: 200,
+    description: 'Process is healthy (database may report degraded)',
+  })
+  @ApiResponse({ status: 503, description: 'Service unavailable' })
   check() {
     return this.health.check([
       () => this.prismaHealth.pingCheck('database', this.prisma),

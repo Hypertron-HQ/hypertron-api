@@ -1,0 +1,14 @@
+node_modules
+dist
+coverage
+.git
+.env
+.env.*
+*.md
+!Payments_API_v1_Schema.md
+test
+docs
+openapi.yaml
+docker-compose*.yml
+.cursor
+.pnpm-store

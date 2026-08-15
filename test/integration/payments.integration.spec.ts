@@ -49,6 +49,8 @@ import stellarConfig from '@/common/config/stellar.config';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { PaymentsModule } from '@/modules/payments/payments.module';
 import { generateApiKey, hashApiKey } from '@/common/utils/crypto.util';
+import { HypertronThrottlerGuard } from '@/common/guards/hypertron-throttler.guard';
+import { passThroughThrottlerGuard } from '../helpers/passthrough-throttler';
 import type { ApiKey } from '@prisma/client';
 
 // ─── In-memory store ──────────────────────────────────────────────────────────
@@ -548,6 +550,8 @@ describe('/v1/payments (integration)', () => {
     })
       .overrideProvider(PrismaService)
       .useValue(prisma)
+      .overrideGuard(HypertronThrottlerGuard)
+      .useValue(passThroughThrottlerGuard)
       .compile();
 
     app = moduleRef.createNestApplication();

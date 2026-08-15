@@ -7,7 +7,7 @@
  * blockchain reconciliation.
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { DeliveryStatus } from '@prisma/client';
@@ -25,6 +25,7 @@ import {
   decodeCursor,
   encodeCursor,
 } from '@/modules/payments/payments.repository';
+import { MetricsService } from '@/observability/metrics.service';
 
 import { WebhookSigner } from './webhook-signer';
 import { WebhookEndpointService } from './webhook-endpoint.service';
@@ -72,6 +73,7 @@ export class WebhookDeliveryService implements WebhookDispatcher {
     private readonly signer: WebhookSigner,
     private readonly endpoints: WebhookEndpointService,
     @InjectQueue(WEBHOOK_QUEUE) private readonly queue: Queue,
+    @Optional() private readonly metrics?: MetricsService,
   ) {}
 
   // ─── Dispatch (called from EventsService) ───────────────────────────────────
@@ -207,6 +209,7 @@ export class WebhookDeliveryService implements WebhookDispatcher {
         },
         'Webhook delivered',
       );
+      this.metrics?.recordWebhookDelivery('delivered', attemptCount);
       return 'delivered';
     }
 
@@ -240,6 +243,7 @@ export class WebhookDeliveryService implements WebhookDispatcher {
           ? 'Webhook delivery permanently failed — retry schedule exhausted'
           : 'Webhook delivery permanently failed — non-retryable response',
       );
+      this.metrics?.recordWebhookDelivery('failed', attemptCount);
       return 'failed';
     }
 
@@ -266,6 +270,7 @@ export class WebhookDeliveryService implements WebhookDispatcher {
       },
       'Webhook delivery failed — retry scheduled',
     );
+    this.metrics?.recordWebhookDelivery('retry_scheduled', attemptCount);
     return 'retry_scheduled';
   }
 

@@ -64,6 +64,7 @@ describe('id-generator', () => {
       expect(PREFIXES.WEBHOOK_ENDPOINT).toBe('we');
       expect(PREFIXES.WEBHOOK_DELIVERY).toBe('whd');
       expect(PREFIXES.REQUEST).toBe('req');
+      expect(PREFIXES.CHECKOUT_LINK).toBe('cl');
     });
   });
 
