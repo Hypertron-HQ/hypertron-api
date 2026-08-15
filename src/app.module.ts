@@ -11,8 +11,10 @@ import databaseConfig from './common/config/database.config';
 import queueConfig from './common/config/queue.config';
 import stellarConfig from './common/config/stellar.config';
 import securityConfig from './common/config/security.config';
+import coreBackendConfig from './common/config/core-backend.config';
 
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
+import { CoreBackendModule } from './infrastructure/core-backend/core-backend.module';
 import { QueueModule } from './infrastructure/queue/queue.module';
 import { StellarModule } from './infrastructure/stellar/stellar.module';
 import { HealthModule } from './health/health.module';
@@ -32,6 +34,7 @@ import { HypertronExceptionFilter } from './common/filters/hypertron-exception.f
 import { ThrottlerExceptionFilter } from './common/filters/throttler-exception.filter';
 import { generateRequestId } from './common/utils/crypto.util';
 import type { QueueConfig } from './common/config/queue.config';
+import { redisDisabled } from './common/config/queue.config';
 
 function buildThrottlers() {
   return [
@@ -67,6 +70,7 @@ function buildThrottlers() {
         queueConfig,
         stellarConfig,
         securityConfig,
+        coreBackendConfig,
       ],
       validationSchema: configValidationSchema,
       validationOptions: {
@@ -96,6 +100,8 @@ function buildThrottlers() {
             'req.headers.authorization',
             'req.headers.cookie',
             'req.headers["x-api-key"]',
+            'req.headers["x-service-key"]',
+            'req.headers["x-internal-token"]',
             'req.body.signing_secret',
             'req.body.secret_key',
             'res.body.signing_secret',
@@ -118,6 +124,7 @@ function buildThrottlers() {
         const throttlers = buildThrottlers();
         const queue = config.get<QueueConfig>('queue');
         const useRedis =
+          !redisDisabled() &&
           process.env.NODE_ENV !== 'test' &&
           process.env.THROTTLE_STORAGE !== 'memory' &&
           Boolean(queue?.redisUrl);
@@ -136,6 +143,7 @@ function buildThrottlers() {
 
     // ── Infrastructure ─────────────────────────────────────────────────────
     PrismaModule,
+    CoreBackendModule,
     QueueModule,
     StellarModule,
     MetricsModule,

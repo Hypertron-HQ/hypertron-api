@@ -1,27 +1,36 @@
-# Render Blueprint — HyperTone Payments API (staging / production)
-# Dashboard: New → Blueprint → connect this repo; set root to hypertron-api
-# or place this file at the repo path configured for the service.
+# Render Blueprint — HyperTone Payments API
+# Root Directory = hypertron-api. Do not set PORT — Render injects it.
+# Redis is off by default (DISABLE_REDIS=true). Add a Key Value instance later.
 
 services:
   - type: web
-    name: hypertron-api-staging
-    runtime: node
+    name: hypertron-api
+    runtime: docker
     plan: starter
     region: oregon
-    rootDir: hypertron-api
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm exec prisma generate && pnpm build
-    startCommand: node dist/main.js
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 10000
+      - key: CORE_BACKEND_URL
+        value: https://hypertron-core-backend.onrender.com
+      - key: DISABLE_REDIS
+        value: 'true'
+      - key: DISABLE_WORKERS
+        value: 'true'
+      - key: THROTTLE_STORAGE
+        value: memory
+      - key: REDIS_URL
+        value: redis://127.0.0.1:6379
       - key: DATABASE_URL
         sync: false
-      - key: REDIS_URL
-        sync: false
       - key: AUTH_SECRET
+        sync: false
+      - key: INTERNAL_SERVICE_TOKEN
+        sync: false
+      - key: CORE_BACKEND_SERVICE_ACCOUNT_API_KEY
         sync: false
       - key: WEBHOOK_SECRET_ENCRYPTION_KEY
         sync: false
@@ -31,10 +40,6 @@ services:
         sync: false
       - key: CORS_ORIGINS
         sync: false
-      - key: THROTTLE_STORAGE
-        value: redis
-      - key: DISABLE_WORKERS
-        value: 'false'
       - key: SWAGGER_ENABLED
         value: 'false'
       - key: OTEL_SDK_DISABLED
@@ -55,60 +60,9 @@ services:
         sync: false
       - key: STELLAR_MAINNET_DESTINATION_ADDRESS
         sync: false
-
-  - type: web
-    name: hypertron-api
-    runtime: node
-    plan: starter
-    region: oregon
-    rootDir: hypertron-api
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm exec prisma generate && pnpm build
-    startCommand: node dist/main.js
-    healthCheckPath: /health
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: PORT
-        value: 10000
-      - key: DATABASE_URL
-        sync: false
-      - key: REDIS_URL
-        sync: false
-      - key: AUTH_SECRET
-        sync: false
-      - key: WEBHOOK_SECRET_ENCRYPTION_KEY
-        sync: false
-      - key: CHECKOUT_BASE_URL
-        sync: false
-      - key: APP_URL
-        sync: false
-      - key: CORS_ORIGINS
-        sync: false
-      - key: THROTTLE_STORAGE
-        value: redis
-      - key: DISABLE_WORKERS
-        value: 'false'
-      - key: SWAGGER_ENABLED
-        value: 'false'
-      - key: OTEL_SDK_DISABLED
-        value: 'false'
-      - key: OTEL_SERVICE_NAME
-        value: hypertron-api
-      - key: OTEL_EXPORTER_OTLP_ENDPOINT
-        sync: false
-      - key: RATE_LIMIT_PAYMENT_CREATE_PER_MIN
-        value: '60'
-      - key: RATE_LIMIT_READ_PER_MIN
-        value: '300'
-      - key: RATE_LIMIT_DASHBOARD_PER_MIN
-        value: '120'
-      - key: STELLAR_TESTNET_HORIZON_URL
-        value: https://horizon-testnet.stellar.org
-      - key: STELLAR_MAINNET_HORIZON_URL
-        value: https://horizon.stellar.org
-      - key: PAYMENT_POOL_ADDRESS
-        sync: false
-      - key: STELLAR_TESTNET_DESTINATION_ADDRESS
-        sync: false
-      - key: STELLAR_MAINNET_DESTINATION_ADDRESS
-        sync: false
+      - key: STELLAR_USDC_ISSUER_TESTNET
+        value: GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3MNLQUIL
+      - key: STELLAR_USDC_ISSUER_MAINNET
+        value: GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN
+      - key: STELLAR_EURC_ISSUER_MAINNET
+        value: GDHU6WRTMTRRCAXVSNHHSZKWNTAPDS75BOZPAV5P5W7QIT4QGC4O2NGS

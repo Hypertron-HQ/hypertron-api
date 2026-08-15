@@ -22,6 +22,8 @@ describe('security hygiene', () => {
     ]) {
       expect(appModuleSrc).toContain(path);
     }
+    expect(appModuleSrc).toContain('req.headers["x-internal-token"]');
+    expect(appModuleSrc).toContain('req.headers["x-service-key"]');
   });
 
   it('does not reference private Stellar keys in source under src/', () => {

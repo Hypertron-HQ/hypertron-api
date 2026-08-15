@@ -72,13 +72,17 @@ export class WebhookDeliveryService implements WebhookDispatcher {
     private readonly prisma: PrismaService,
     private readonly signer: WebhookSigner,
     private readonly endpoints: WebhookEndpointService,
-    @InjectQueue(WEBHOOK_QUEUE) private readonly queue: Queue,
+    @Optional() @InjectQueue(WEBHOOK_QUEUE) private readonly queue?: Queue,
     @Optional() private readonly metrics?: MetricsService,
   ) {}
 
   // ─── Dispatch (called from EventsService) ───────────────────────────────────
 
   async dispatchEvent(event: PaymentEvent): Promise<void> {
+    if (!this.queue) {
+      this.logger.warn('DISABLE_REDIS=true — skipping webhook enqueue');
+      return;
+    }
     const data: FanoutEventJob = { eventInternalId: event.id };
     await this.queue.add(JOB_FANOUT_EVENT, data, {
       jobId: `fanout_${event.publicId}`,
@@ -425,6 +429,11 @@ export class WebhookDeliveryService implements WebhookDispatcher {
     const suffix =
       jobIdSuffix ??
       (delivery.attemptCount > 0 ? `r${delivery.attemptCount}` : '');
+
+    if (!this.queue) {
+      this.logger.warn('DISABLE_REDIS=true — skipping webhook delivery enqueue');
+      return;
+    }
 
     await this.queue.add(JOB_DELIVER, data, {
       // First attempt reuses the delivery id so duplicate fan-outs collapse.

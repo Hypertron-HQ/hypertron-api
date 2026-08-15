@@ -54,7 +54,7 @@ export class ReconcilerService {
     private readonly verifier: StellarVerifier,
     private readonly stateMachine: PaymentStateMachine,
     private readonly config: ConfigService,
-    @InjectQueue(RECONCILER_QUEUE) private readonly queue: Queue,
+    @Optional() @InjectQueue(RECONCILER_QUEUE) private readonly queue?: Queue,
     @Optional() private readonly metrics?: MetricsService,
   ) {}
 
@@ -332,6 +332,10 @@ export class ReconcilerService {
   }
 
   private async enqueueFinalityCheck(payment: Payment): Promise<void> {
+    if (!this.queue) {
+      this.logger.warn('DISABLE_REDIS=true — skipping finality enqueue');
+      return;
+    }
     const stellar = this.config.get<StellarConfig>('stellar')!;
     const data: FinalityCheckJob = { paymentInternalId: payment.id };
     await this.queue.add(JOB_FINALITY_CHECK, data, {

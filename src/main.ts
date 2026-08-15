@@ -50,6 +50,8 @@ async function bootstrap(): Promise<void> {
       'Authorization',
       'Idempotency-Key',
       'X-Request-Id',
+      'X-Internal-Token',
+      'X-Service-Key',
     ],
     exposedHeaders: [
       'X-Request-Id',
@@ -93,7 +95,7 @@ async function bootstrap(): Promise<void> {
 
   // ── Start server ──────────────────────────────────────────────────────────
   const port = appConfig.port;
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
 
   logger.log(
     `🚀 HyperTone Payments API listening on port ${port} [${appConfig.nodeEnv}]`,

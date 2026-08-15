@@ -19,7 +19,8 @@ export const configValidationSchema = Joi.object({
   DATABASE_URL: Joi.string().required(),
 
   // ── Redis ─────────────────────────────────────────────────────────────────
-  REDIS_URL: Joi.string().default('redis://localhost:6379'),
+  REDIS_URL: Joi.string().allow('').default('redis://127.0.0.1:6379'),
+  DISABLE_REDIS: Joi.boolean().truthy('true').falsy('false').default(false),
 
   // ── Stellar ───────────────────────────────────────────────────────────────
   STELLAR_TESTNET_HORIZON_URL: Joi.string()
@@ -58,6 +59,15 @@ export const configValidationSchema = Joi.object({
       then: Joi.required(),
       otherwise: Joi.string().default('dev-internal-service-token-change-me'),
     }),
+  CORE_BACKEND_URL: Joi.string()
+    .uri()
+    .default('https://hypertron-core-backend.onrender.com'),
+  CORE_BACKEND_SERVICE_ACCOUNT_API_KEY: Joi.when('NODE_ENV', {
+    is: 'production',
+    then: Joi.string().min(16).required(),
+    otherwise: Joi.string().min(16).allow('').optional(),
+  }),
+  CORE_BACKEND_TIMEOUT_MS: Joi.number().integer().min(1000).default(8000),
   API_KEY_SALT_ROUNDS: Joi.number().integer().min(10).max(14).default(12),
   WEBHOOK_SECRET_ENCRYPTION_KEY: Joi.string()
     .pattern(/^[0-9a-f]{64}$/)
@@ -73,7 +83,7 @@ export const configValidationSchema = Joi.object({
   RATE_LIMIT_PAYMENT_CREATE_PER_MIN: Joi.number().integer().min(1).default(60),
   RATE_LIMIT_READ_PER_MIN: Joi.number().integer().min(1).default(300),
   RATE_LIMIT_DASHBOARD_PER_MIN: Joi.number().integer().min(1).default(120),
-  THROTTLE_STORAGE: Joi.string().valid('redis', 'memory').default('redis'),
+  THROTTLE_STORAGE: Joi.string().valid('redis', 'memory').default('memory'),
 
   // ── OpenTelemetry (optional) ──────────────────────────────────────────────
   OTEL_SDK_DISABLED: Joi.boolean().truthy('true').falsy('false').default(false),

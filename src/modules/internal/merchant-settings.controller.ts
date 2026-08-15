@@ -5,13 +5,35 @@
 
 import { Body, Controller, HttpCode, Put, UseGuards } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+  ValidateIf,
+} from 'class-validator';
 
 import { InternalServiceGuard } from '@/common/guards/internal-service.guard';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 
-class UpsertMerchantSettingsDto {
+export class UpsertMerchantSettingsDto {
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(1)
+  @MaxLength(128)
   businessId!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(1)
+  @MaxLength(128)
   walletAddress!: string;
+
+  @ValidateIf((_, v) => v !== null && v !== undefined)
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
   receiveAddress?: string | null;
 }
 

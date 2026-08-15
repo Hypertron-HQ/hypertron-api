@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { HealthCheckService, PrismaHealthIndicator } from '@nestjs/terminus';
 import { HealthController } from './health.controller';
 import { PrismaService } from '../infrastructure/prisma/prisma.service';
+import { CoreBackendClient } from '../infrastructure/core-backend/core-backend.client';
 
 describe('HealthController', () => {
   let controller: HealthController;
@@ -33,6 +34,10 @@ describe('HealthController', () => {
         {
           provide: PrismaService,
           useValue: {},
+        },
+        {
+          provide: CoreBackendClient,
+          useValue: { isConfigured: () => true },
         },
       ],
     }).compile();

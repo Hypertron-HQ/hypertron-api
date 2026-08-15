@@ -32,24 +32,16 @@ Recommended alert rules:
 
 Dashboard panels: request rate by route, payment created/completed/failed counters, webhook delivery outcomes, reconciler errors, rate-limit hits.
 
-## Staging deploy (Render)
+## Staging / production deploy (Render)
 
-1. Connect the GitHub repo; apply `render.yaml` (service `hypertron-api-staging`).
-2. Fill synced secrets: `DATABASE_URL`, `REDIS_URL`, `AUTH_SECRET`, `WEBHOOK_SECRET_ENCRYPTION_KEY`, destination addresses, `APP_URL`, `CHECKOUT_BASE_URL`, `CORS_ORIGINS`.
-3. After first deploy: `pnpm exec prisma db push` (or migrate) against staging Mongo if collections are empty.
-4. Smoke: `curl -sS "$STAGING_URL/health"`.
-5. E2E against staging:
-   ```bash
-   BASE_URL=$STAGING_URL API_KEY=sk_test_... LIMIT=60 node scripts/load-rate-limit.mjs
-   ```
-   Plus manual or CI HTTP checks for create/get/cancel.
+See `docs/ops/RENDER_DEPLOY.md` and `docs/ops/RENDER_ENV.example`.
 
-## Production deploy
-
-1. Promote the same image/build as staging (`hypertron-api` service in `render.yaml`).
-2. Confirm `SWAGGER_ENABLED=false`, `NODE_ENV=production`, OTEL endpoint set if used.
-3. Enable alerts above before cutting merchant traffic.
-4. Rollback: redeploy previous Render deploy; workers share the same process unless `DISABLE_WORKERS` split is introduced later.
+1. Web Service: Root Directory `hypertron-api`, runtime **Docker**, health `/health`. Do not set `PORT`.
+2. Key Value Redis (`noeviction`) → `REDIS_URL`.
+3. Fill secrets: `DATABASE_URL` (`hypertron_api` DB), `AUTH_SECRET` (same as core), `INTERNAL_SERVICE_TOKEN` (same as core), `CORE_BACKEND_URL`, `CORE_BACKEND_SERVICE_ACCOUNT_API_KEY` (same as core `SERVICE_ACCOUNT_API_KEY`), `WEBHOOK_SECRET_ENCRYPTION_KEY`, `APP_URL`, `CHECKOUT_BASE_URL`, `CORS_ORIGINS`.
+4. First deploy: `pnpm db:push:api` against Atlas if collections are empty.
+5. Smoke: `curl -sS "$URL/health"` — expect `coreBackend: configured`.
+6. On **core** Render: set `PAYMENTS_API_URL` to this service’s HTTPS origin.
 
 ## Local Docker
 

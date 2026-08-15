@@ -14,14 +14,15 @@ import { WebhookEndpointService } from './webhook-endpoint.service';
 import { WebhookDeliveryService } from './webhook-delivery.service';
 import { WebhookProcessor } from './webhook.processor';
 import { WEBHOOK_DISPATCHER } from './webhook-dispatcher';
-import { workersDisabled } from '@/common/config/queue.config';
+import { workersDisabled, redisDisabled } from '@/common/config/queue.config';
 import { WEBHOOK_QUEUE } from './webhooks.constants';
 
+const skipQueues = redisDisabled();
 const disableWorkers = workersDisabled();
 
 @Global()
 @Module({
-  imports: [BullModule.registerQueue({ name: WEBHOOK_QUEUE })],
+  imports: skipQueues ? [] : [BullModule.registerQueue({ name: WEBHOOK_QUEUE })],
   providers: [
     WebhookSigner,
     WebhookEndpointService,
