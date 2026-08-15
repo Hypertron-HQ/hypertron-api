@@ -1,13 +1,9 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
 import { timingSafeEqual } from 'crypto';
 
+import { AuthenticationException } from '@/common/exceptions/hypertron.exception';
 import type { SecurityConfig } from '@/common/config/security.config';
 
 @Injectable()
@@ -20,7 +16,10 @@ export class InternalServiceGuard implements CanActivate {
         .get<SecurityConfig>('security')
         ?.internalServiceToken?.trim() ?? '';
     if (!expected) {
-      throw new UnauthorizedException('INTERNAL_SERVICE_TOKEN not configured');
+      throw new AuthenticationException(
+        'server_misconfigured',
+        'INTERNAL_SERVICE_TOKEN is not configured.',
+      );
     }
 
     const request = context.switchToHttp().getRequest<Request>();
@@ -28,7 +27,10 @@ export class InternalServiceGuard implements CanActivate {
       (request.headers['x-internal-token'] as string | undefined)?.trim() ?? '';
 
     if (!safeEqual(provided, expected)) {
-      throw new UnauthorizedException('Invalid internal service token');
+      throw new AuthenticationException(
+        'invalid_internal_token',
+        'Invalid internal service token.',
+      );
     }
     return true;
   }

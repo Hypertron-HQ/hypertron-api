@@ -14,7 +14,7 @@
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getQueueToken } from '@nestjs/bullmq';
-import * as request from 'supertest';
+import request from 'supertest';
 import { ValidationPipe } from '@nestjs/common';
 import type { INestApplication } from '@nestjs/common';
 import type { WebhookDelivery, WebhookEndpoint } from '@prisma/client';
@@ -25,6 +25,8 @@ import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { WEBHOOK_QUEUE } from '@/modules/webhooks/webhooks.constants';
 import { generateTestSessionCookie } from '@/common/guards/session.guard';
 import { DASHBOARD_SESSION_COOKIE } from '@/common/auth/dashboard-session';
+import { HypertronThrottlerGuard } from '@/common/guards/hypertron-throttler.guard';
+import { passThroughThrottlerGuard } from '../helpers/passthrough-throttler';
 
 const AUTH_SECRET = 'test-auth-secret-for-integration';
 const ENCRYPTION_KEY = 'd'.repeat(64);
@@ -42,23 +44,23 @@ class MockPrismaService {
     return `oid_${++this.seq}`;
   }
 
-  private businesses = [
-    { id: OWNER_BUSINESS_ID, walletAddress: OWNER_WALLET },
-    { id: OTHER_BUSINESS_ID, walletAddress: OTHER_WALLET },
+  private merchantSettingsRows = [
+    { businessId: OWNER_BUSINESS_ID, walletAddress: OWNER_WALLET },
+    { businessId: OTHER_BUSINESS_ID, walletAddress: OTHER_WALLET },
   ];
 
-  readonly business = {
+  readonly merchantSettings = {
     findUnique: async (args: {
-      where: { walletAddress?: string; id?: string };
-      select?: { id?: boolean };
+      where: { walletAddress?: string; businessId?: string };
+      select?: { businessId?: boolean };
     }) => {
-      const row = this.businesses.find((b) =>
+      const row = this.merchantSettingsRows.find((b) =>
         args.where.walletAddress
           ? b.walletAddress === args.where.walletAddress
-          : b.id === args.where.id,
+          : b.businessId === args.where.businessId,
       );
       if (!row) return null;
-      return args.select?.id ? { id: row.id } : row;
+      return args.select?.businessId ? { businessId: row.businessId } : row;
     },
   };
 
@@ -202,6 +204,8 @@ describe('/api/developer/webhook-endpoints (integration)', () => {
       .useValue(prisma)
       .overrideProvider(getQueueToken(WEBHOOK_QUEUE))
       .useValue(queue)
+      .overrideGuard(HypertronThrottlerGuard)
+      .useValue(passThroughThrottlerGuard)
       .compile();
 
     app = moduleRef.createNestApplication();

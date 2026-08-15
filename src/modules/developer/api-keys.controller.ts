@@ -33,6 +33,7 @@ import {
 
 import { SessionGuard } from '@/common/guards/session.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
+import { HypertronThrottlerGuard } from '@/common/guards/hypertron-throttler.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import {
   CurrentUser,
@@ -47,11 +48,16 @@ import {
   toApiKeyResponse,
   toApiKeyListResponse,
 } from './dto/api-key-response.dto';
+import { HypertronErrorResponseDto } from '@/common/dto/hypertron-error.dto';
+import { SkipThrottle } from '@nestjs/throttler';
 
 @ApiTags('Developer')
 @ApiBearerAuth('SessionCookie')
 @Controller('api/developer/api-keys')
-@UseGuards(SessionGuard, RolesGuard)
+@UseGuards(SessionGuard, RolesGuard, HypertronThrottlerGuard)
+@SkipThrottle({ 'payment-create': true, read: true })
+@ApiResponse({ status: 401, description: 'Missing or invalid session', type: HypertronErrorResponseDto })
+@ApiResponse({ status: 403, description: 'Insufficient role', type: HypertronErrorResponseDto })
 export class ApiKeysController {
   constructor(private readonly apiKeyService: ApiKeyService) {}
 
@@ -65,6 +71,7 @@ export class ApiKeysController {
       '(Business.id from ht_dashboard cookie). secret_key is always null in list responses.',
   })
   @ApiResponse({ status: 200, type: ApiKeyListResponseDto })
+  @ApiResponse({ status: 401, type: HypertronErrorResponseDto })
   async list(@CurrentUser() user: SessionUser): Promise<ApiKeyListResponseDto> {
     const keys = await this.apiKeyService.listForBusiness(user.businessId);
     return toApiKeyListResponse(keys);
@@ -82,6 +89,7 @@ export class ApiKeysController {
       'and cannot be retrieved again. Store it securely immediately.',
   })
   @ApiResponse({ status: 201, type: ApiKeyResponseDto })
+  @ApiResponse({ status: 400, type: HypertronErrorResponseDto })
   async create(
     @Body() dto: CreateApiKeyDto,
     @CurrentUser() user: SessionUser,
@@ -109,6 +117,7 @@ export class ApiKeysController {
   })
   @ApiParam({ name: 'id', description: 'API key publicId (key_...)' })
   @ApiResponse({ status: 200, type: ApiKeyResponseDto })
+  @ApiResponse({ status: 404, type: HypertronErrorResponseDto })
   async rotate(
     @Param('id') id: string,
     @CurrentUser() user: SessionUser,
@@ -146,6 +155,7 @@ export class ApiKeysController {
   })
   @ApiParam({ name: 'id', description: 'API key publicId (key_...)' })
   @ApiResponse({ status: 200, type: ApiKeyResponseDto })
+  @ApiResponse({ status: 404, type: HypertronErrorResponseDto })
   async revoke(
     @Param('id') id: string,
     @CurrentUser() user: SessionUser,

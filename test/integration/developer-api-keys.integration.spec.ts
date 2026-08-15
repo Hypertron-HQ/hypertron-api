@@ -16,6 +16,8 @@ import securityConfig from '@/common/config/security.config';
 import { generateTestSessionCookie } from '@/common/guards/session.guard';
 import { DASHBOARD_SESSION_COOKIE } from '@/common/auth/dashboard-session';
 import { hashApiKey, generateApiKey } from '@/common/utils/crypto.util';
+import { HypertronThrottlerGuard } from '@/common/guards/hypertron-throttler.guard';
+import { passThroughThrottlerGuard } from '../helpers/passthrough-throttler';
 import type { ApiKey } from '@prisma/client';
 
 const AUTH_SECRET = 'test-auth-secret-for-integration';
@@ -168,6 +170,8 @@ describe('/api/developer/api-keys (integration)', () => {
     })
       .overrideProvider(PrismaService)
       .useValue(prisma)
+      .overrideGuard(HypertronThrottlerGuard)
+      .useValue(passThroughThrottlerGuard)
       .compile();
 
     app = moduleRef.createNestApplication();

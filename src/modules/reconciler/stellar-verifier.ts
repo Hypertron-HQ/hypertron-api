@@ -1,7 +1,7 @@
 /**
  * StellarVerifier — classic Horizon payment match checks (Plan §12.2).
  *
- * Works for Dev API `Payment` rows and dashboard `PaymentLink` rows via
+ * Works for Dev API `Payment` rows and API `CheckoutLink` rows via
  * a shared match target shape.
  */
 

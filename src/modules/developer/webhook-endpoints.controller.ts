@@ -37,6 +37,7 @@ import {
 } from '@nestjs/swagger';
 import { SessionGuard } from '@/common/guards/session.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
+import { HypertronThrottlerGuard } from '@/common/guards/hypertron-throttler.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import {
   CurrentUser,
@@ -62,11 +63,16 @@ import {
   toWebhookDeliveryListResponse,
   toWebhookDeliveryResponse,
 } from '@/modules/webhooks/dto/webhook-delivery-response.dto';
+import { SkipThrottle } from '@nestjs/throttler';
+import { HypertronErrorResponseDto } from '@/common/dto/hypertron-error.dto';
 
 @ApiTags('Developer')
 @ApiBearerAuth('SessionCookie')
 @Controller('api/developer/webhook-endpoints')
-@UseGuards(SessionGuard, RolesGuard)
+@UseGuards(SessionGuard, RolesGuard, HypertronThrottlerGuard)
+@SkipThrottle({ 'payment-create': true, read: true })
+@ApiResponse({ status: 401, description: 'Missing or invalid session', type: HypertronErrorResponseDto })
+@ApiResponse({ status: 403, description: 'Insufficient role', type: HypertronErrorResponseDto })
 export class WebhookEndpointsController {
   constructor(
     private readonly endpoints: WebhookEndpointService,
@@ -100,6 +106,7 @@ export class WebhookEndpointsController {
       'Creates an endpoint and returns signing_secret exactly once. Store it — it cannot be retrieved again.',
   })
   @ApiResponse({ status: 201, type: WebhookEndpointResponseDto })
+  @ApiResponse({ status: 400, type: HypertronErrorResponseDto })
   async create(
     @Body() dto: CreateWebhookEndpointDto,
     @CurrentUser() user: SessionUser,
@@ -125,6 +132,7 @@ export class WebhookEndpointsController {
   })
   @ApiParam({ name: 'id', description: 'Endpoint publicId (we_...)' })
   @ApiResponse({ status: 200, type: WebhookEndpointResponseDto })
+  @ApiResponse({ status: 404, type: HypertronErrorResponseDto })
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateWebhookEndpointDto,
@@ -146,6 +154,7 @@ export class WebhookEndpointsController {
   })
   @ApiParam({ name: 'id', description: 'Endpoint publicId (we_...)' })
   @ApiResponse({ status: 200, type: WebhookEndpointResponseDto })
+  @ApiResponse({ status: 404, type: HypertronErrorResponseDto })
   async rotateSecret(
     @Param('id') id: string,
     @CurrentUser() user: SessionUser,
@@ -164,6 +173,7 @@ export class WebhookEndpointsController {
   })
   @ApiParam({ name: 'id', description: 'Endpoint publicId (we_...)' })
   @ApiResponse({ status: 200, type: DeletedWebhookEndpointResponseDto })
+  @ApiResponse({ status: 404, type: HypertronErrorResponseDto })
   async remove(
     @Param('id') id: string,
     @CurrentUser() user: SessionUser,
@@ -182,6 +192,7 @@ export class WebhookEndpointsController {
   })
   @ApiParam({ name: 'id', description: 'Endpoint publicId (we_...)' })
   @ApiResponse({ status: 200, type: WebhookDeliveryListResponseDto })
+  @ApiResponse({ status: 404, type: HypertronErrorResponseDto })
   async listDeliveries(
     @Param('id') id: string,
     @Query() query: ListDeliveriesDto,
@@ -190,7 +201,7 @@ export class WebhookEndpointsController {
     const { page } = await this.deliveries.listDeliveries(id, user.businessId, {
       limit: query.limit ?? 25,
       cursor: query.cursor,
-      status: query.status,
+      status: query.status as import('@prisma/client').DeliveryStatus | undefined,
     });
 
     return toWebhookDeliveryListResponse(
@@ -214,6 +225,7 @@ export class WebhookEndpointsController {
   @ApiParam({ name: 'id', description: 'Endpoint publicId (we_...)' })
   @ApiParam({ name: 'deliveryId', description: 'Delivery publicId (whd_...)' })
   @ApiResponse({ status: 200, type: WebhookDeliveryResponseDto })
+  @ApiResponse({ status: 404, type: HypertronErrorResponseDto })
   async retryDelivery(
     @Param('id') id: string,
     @Param('deliveryId') deliveryId: string,
@@ -239,6 +251,7 @@ export class WebhookEndpointsController {
   })
   @ApiParam({ name: 'id', description: 'Endpoint publicId (we_...)' })
   @ApiResponse({ status: 200, type: TestWebhookResponseDto })
+  @ApiResponse({ status: 404, type: HypertronErrorResponseDto })
   async sendTest(
     @Param('id') id: string,
     @CurrentUser() user: SessionUser,

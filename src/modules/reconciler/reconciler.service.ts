@@ -12,7 +12,7 @@
  * Dashboard Collect PaymentLinks are reconciled in hypertron-core-backend.
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -23,6 +23,7 @@ import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { StellarHorizonService } from '@/infrastructure/stellar/stellar-horizon.service';
 import { CircuitOpenError } from '@/infrastructure/stellar/circuit-breaker';
 import { PaymentStateMachine } from '@/modules/payments/payment-state-machine';
+import { MetricsService } from '@/observability/metrics.service';
 import { addDecimalStrings } from '@/common/utils/amount.util';
 import type { StellarConfig } from '@/common/config/stellar.config';
 import { StateTransitionException } from '@/common/exceptions/hypertron.exception';
@@ -54,6 +55,7 @@ export class ReconcilerService {
     private readonly stateMachine: PaymentStateMachine,
     private readonly config: ConfigService,
     @InjectQueue(RECONCILER_QUEUE) private readonly queue: Queue,
+    @Optional() private readonly metrics?: MetricsService,
   ) {}
 
   /**
@@ -183,6 +185,11 @@ export class ReconcilerService {
             result.code === 'wrong_issuer' ? 'wrong_asset' : result.code,
             result.message,
           );
+          this.metrics?.recordPaymentFailed(
+            payment.environment,
+            result.code === 'wrong_issuer' ? 'wrong_asset' : result.code,
+          );
+          this.metrics?.recordReconciliationError(result.code);
           return 'failed';
         } catch (err) {
           if (err instanceof StateTransitionException) return 'skipped';
@@ -259,6 +266,8 @@ export class ReconcilerService {
           'tx_unsuccessful',
           'Transaction no longer successful at finality check',
         );
+        this.metrics?.recordPaymentFailed(payment.environment, 'tx_unsuccessful');
+        this.metrics?.recordReconciliationError('tx_unsuccessful');
         return 'failed';
       } catch (err) {
         if (err instanceof StateTransitionException) return 'skipped';
@@ -270,6 +279,14 @@ export class ReconcilerService {
       const completed = await this.stateMachine.toCompleted(payment.id);
       await this.syncCheckoutLink(completed);
       await this.updateCustomerAggregates(completed);
+      const latencySeconds =
+        (completed.completedAt!.getTime() - completed.createdAt.getTime()) /
+        1000;
+      this.metrics?.recordPaymentCompleted(
+        completed.environment,
+        completed.currency,
+        latencySeconds,
+      );
       this.logger.log(
         { paymentId: completed.publicId },
         'Payment completed after finality',

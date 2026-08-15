@@ -22,6 +22,8 @@ import type { Customer, ApiKey } from '@prisma/client';
 
 import securityConfig from '@/common/config/security.config';
 import appConfig from '@/common/config/app.config';
+import { HypertronThrottlerGuard } from '@/common/guards/hypertron-throttler.guard';
+import { passThroughThrottlerGuard } from '../helpers/passthrough-throttler';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { CustomersModule } from '@/modules/customers/customers.module';
 import { DeveloperModule } from '@/modules/developer/developer.module';
@@ -283,6 +285,8 @@ describe('Customer API (integration)', () => {
     })
       .overrideProvider(PrismaService)
       .useValue(prisma)
+      .overrideGuard(HypertronThrottlerGuard)
+      .useValue(passThroughThrottlerGuard)
       .compile();
 
     app = moduleRef.createNestApplication();
