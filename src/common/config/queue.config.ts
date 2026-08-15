@@ -6,10 +6,7 @@ export interface QueueConfig {
   disableWorkers: boolean;
 }
 
-export default registerAs(
-  'queue',
-  (): QueueConfig => ({
-    redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',
-    disableWorkers: process.env.DISABLE_WORKERS === 'true',
-  }),
-);
+export default registerAs('queue', (): QueueConfig => ({
+  redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',
+  disableWorkers: process.env.DISABLE_WORKERS === 'true',
+}));

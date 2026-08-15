@@ -26,6 +26,7 @@ export const PREFIXES = {
   WEBHOOK_ENDPOINT: 'we',
   WEBHOOK_DELIVERY: 'whd',
   REQUEST: 'req',
+  CHECKOUT_LINK: 'cl',
 } as const;
 
 export type IdPrefix = (typeof PREFIXES)[keyof typeof PREFIXES];

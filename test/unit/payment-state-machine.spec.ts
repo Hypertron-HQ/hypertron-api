@@ -22,7 +22,10 @@ import { StateTransitionException } from '@/common/exceptions/hypertron.exceptio
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 let idCounter = 0;
-function makePayment(status: PaymentStatus, overrides: Partial<Payment> = {}): Payment {
+function makePayment(
+  status: PaymentStatus,
+  overrides: Partial<Payment> = {},
+): Payment {
   idCounter++;
   return {
     id: `id_${idCounter}`,
@@ -36,7 +39,7 @@ function makePayment(status: PaymentStatus, overrides: Partial<Payment> = {}): P
     customerId: null,
     metadata: {},
     checkoutUrl: 'https://pay.example.com/pay/pay_1',
-    paymentLinkId: `pay_${idCounter}`,
+    checkoutLinkId: `pay_${idCounter}`,
     linkMemo: `hpl_abc${idCounter}`,
     destinationAddress: 'GTEST',
     payerAddress: null,
@@ -58,26 +61,28 @@ function makePayment(status: PaymentStatus, overrides: Partial<Payment> = {}): P
 
 function buildMockPrisma(payment: Payment) {
   // Simulate updateMany modifying the in-memory payment
-  const updateMany = jest.fn().mockImplementation(
-    async (args: {
-      where: { status?: { in?: PaymentStatus[] }; transactionHash?: null };
-      data: Partial<Payment>;
-    }) => {
-      const allowed = args.where.status?.in ?? [];
-      if (allowed.length > 0 && !allowed.includes(payment.status)) {
-        return { count: 0 };
-      }
-      if (
-        'transactionHash' in args.where &&
-        args.where.transactionHash === null &&
-        payment.transactionHash !== null
-      ) {
-        return { count: 0 };
-      }
-      Object.assign(payment, args.data);
-      return { count: 1 };
-    },
-  );
+  const updateMany = jest
+    .fn()
+    .mockImplementation(
+      async (args: {
+        where: { status?: { in?: PaymentStatus[] }; transactionHash?: null };
+        data: Partial<Payment>;
+      }) => {
+        const allowed = args.where.status?.in ?? [];
+        if (allowed.length > 0 && !allowed.includes(payment.status)) {
+          return { count: 0 };
+        }
+        if (
+          'transactionHash' in args.where &&
+          args.where.transactionHash === null &&
+          payment.transactionHash !== null
+        ) {
+          return { count: 0 };
+        }
+        Object.assign(payment, args.data);
+        return { count: 1 };
+      },
+    );
 
   const findUnique = jest.fn().mockImplementation(async () => ({ ...payment }));
 
@@ -133,13 +138,17 @@ describe('PaymentStateMachine', () => {
     it('throws StateTransitionException from pending', async () => {
       const p = makePayment(PaymentStatus.pending);
       machine = await buildModule(p);
-      await expect(machine.toPending(p.id)).rejects.toThrow(StateTransitionException);
+      await expect(machine.toPending(p.id)).rejects.toThrow(
+        StateTransitionException,
+      );
     });
 
     it('throws StateTransitionException from completed', async () => {
       const p = makePayment(PaymentStatus.completed);
       machine = await buildModule(p);
-      await expect(machine.toPending(p.id)).rejects.toThrow(StateTransitionException);
+      await expect(machine.toPending(p.id)).rejects.toThrow(
+        StateTransitionException,
+      );
     });
   });
 
@@ -179,13 +188,17 @@ describe('PaymentStateMachine', () => {
     it('throws from created (must be pending first)', async () => {
       const p = makePayment(PaymentStatus.created);
       machine = await buildModule(p);
-      await expect(machine.toConfirmed(p.id, tx)).rejects.toThrow(StateTransitionException);
+      await expect(machine.toConfirmed(p.id, tx)).rejects.toThrow(
+        StateTransitionException,
+      );
     });
 
     it('throws from completed (terminal)', async () => {
       const p = makePayment(PaymentStatus.completed);
       machine = await buildModule(p);
-      await expect(machine.toConfirmed(p.id, tx)).rejects.toThrow(StateTransitionException);
+      await expect(machine.toConfirmed(p.id, tx)).rejects.toThrow(
+        StateTransitionException,
+      );
     });
   });
 
@@ -210,19 +223,26 @@ describe('PaymentStateMachine', () => {
       const p = makePayment(PaymentStatus.confirmed);
       machine = await buildModule(p);
       await machine.toCompleted(p.id);
-      expect(mockEvents.emit).toHaveBeenCalledWith(expect.anything(), 'payment.completed');
+      expect(mockEvents.emit).toHaveBeenCalledWith(
+        expect.anything(),
+        'payment.completed',
+      );
     });
 
     it('throws from pending (must be confirmed first)', async () => {
       const p = makePayment(PaymentStatus.pending);
       machine = await buildModule(p);
-      await expect(machine.toCompleted(p.id)).rejects.toThrow(StateTransitionException);
+      await expect(machine.toCompleted(p.id)).rejects.toThrow(
+        StateTransitionException,
+      );
     });
 
     it('throws from created', async () => {
       const p = makePayment(PaymentStatus.created);
       machine = await buildModule(p);
-      await expect(machine.toCompleted(p.id)).rejects.toThrow(StateTransitionException);
+      await expect(machine.toCompleted(p.id)).rejects.toThrow(
+        StateTransitionException,
+      );
     });
   });
 
@@ -232,7 +252,11 @@ describe('PaymentStateMachine', () => {
     it('transitions pending → failed', async () => {
       const p = makePayment(PaymentStatus.pending);
       machine = await buildModule(p);
-      const result = await machine.toFailed(p.id, 'wrong_asset', 'Wrong asset received');
+      const result = await machine.toFailed(
+        p.id,
+        'wrong_asset',
+        'Wrong asset received',
+      );
       expect(result.status).toBe(PaymentStatus.failed);
     });
 
@@ -247,19 +271,26 @@ describe('PaymentStateMachine', () => {
       const p = makePayment(PaymentStatus.pending);
       machine = await buildModule(p);
       await machine.toFailed(p.id, 'code', 'msg');
-      expect(mockEvents.emit).toHaveBeenCalledWith(expect.anything(), 'payment.failed');
+      expect(mockEvents.emit).toHaveBeenCalledWith(
+        expect.anything(),
+        'payment.failed',
+      );
     });
 
     it('throws from created', async () => {
       const p = makePayment(PaymentStatus.created);
       machine = await buildModule(p);
-      await expect(machine.toFailed(p.id, 'x', 'y')).rejects.toThrow(StateTransitionException);
+      await expect(machine.toFailed(p.id, 'x', 'y')).rejects.toThrow(
+        StateTransitionException,
+      );
     });
 
     it('throws from completed (terminal)', async () => {
       const p = makePayment(PaymentStatus.completed);
       machine = await buildModule(p);
-      await expect(machine.toFailed(p.id, 'x', 'y')).rejects.toThrow(StateTransitionException);
+      await expect(machine.toFailed(p.id, 'x', 'y')).rejects.toThrow(
+        StateTransitionException,
+      );
     });
   });
 
@@ -284,19 +315,26 @@ describe('PaymentStateMachine', () => {
       const p = makePayment(PaymentStatus.pending);
       machine = await buildModule(p);
       await machine.toExpired(p.id);
-      expect(mockEvents.emit).toHaveBeenCalledWith(expect.anything(), 'payment.expired');
+      expect(mockEvents.emit).toHaveBeenCalledWith(
+        expect.anything(),
+        'payment.expired',
+      );
     });
 
     it('throws from confirmed', async () => {
       const p = makePayment(PaymentStatus.confirmed);
       machine = await buildModule(p);
-      await expect(machine.toExpired(p.id)).rejects.toThrow(StateTransitionException);
+      await expect(machine.toExpired(p.id)).rejects.toThrow(
+        StateTransitionException,
+      );
     });
 
     it('throws from completed (terminal)', async () => {
       const p = makePayment(PaymentStatus.completed);
       machine = await buildModule(p);
-      await expect(machine.toExpired(p.id)).rejects.toThrow(StateTransitionException);
+      await expect(machine.toExpired(p.id)).rejects.toThrow(
+        StateTransitionException,
+      );
     });
   });
 
@@ -328,31 +366,42 @@ describe('PaymentStateMachine', () => {
       const p = makePayment(PaymentStatus.created);
       machine = await buildModule(p);
       await machine.toCanceled(p.id);
-      expect(mockEvents.emit).toHaveBeenCalledWith(expect.anything(), 'payment.canceled');
+      expect(mockEvents.emit).toHaveBeenCalledWith(
+        expect.anything(),
+        'payment.canceled',
+      );
     });
 
     it('throws from confirmed', async () => {
       const p = makePayment(PaymentStatus.confirmed);
       machine = await buildModule(p);
-      await expect(machine.toCanceled(p.id)).rejects.toThrow(StateTransitionException);
+      await expect(machine.toCanceled(p.id)).rejects.toThrow(
+        StateTransitionException,
+      );
     });
 
     it('throws from completed (terminal)', async () => {
       const p = makePayment(PaymentStatus.completed);
       machine = await buildModule(p);
-      await expect(machine.toCanceled(p.id)).rejects.toThrow(StateTransitionException);
+      await expect(machine.toCanceled(p.id)).rejects.toThrow(
+        StateTransitionException,
+      );
     });
 
     it('throws from failed (terminal)', async () => {
       const p = makePayment(PaymentStatus.failed);
       machine = await buildModule(p);
-      await expect(machine.toCanceled(p.id)).rejects.toThrow(StateTransitionException);
+      await expect(machine.toCanceled(p.id)).rejects.toThrow(
+        StateTransitionException,
+      );
     });
 
     it('throws from expired (terminal)', async () => {
       const p = makePayment(PaymentStatus.expired);
       machine = await buildModule(p);
-      await expect(machine.toCanceled(p.id)).rejects.toThrow(StateTransitionException);
+      await expect(machine.toCanceled(p.id)).rejects.toThrow(
+        StateTransitionException,
+      );
     });
   });
 
@@ -368,8 +417,8 @@ describe('PaymentStateMachine', () => {
       // Second findUnique call → returns 'pending' (already transitioned by winner)
       const pendingSnapshot = { ...p, status: PaymentStatus.pending };
       prisma.payment.findUnique
-        .mockResolvedValueOnce({ ...p })         // first call: pre-transition check
-        .mockResolvedValueOnce(pendingSnapshot);  // second call: reload after race
+        .mockResolvedValueOnce({ ...p }) // first call: pre-transition check
+        .mockResolvedValueOnce(pendingSnapshot); // second call: reload after race
 
       prisma.payment.updateMany.mockResolvedValueOnce({ count: 0 });
 
@@ -400,7 +449,9 @@ describe('PaymentStateMachine', () => {
       }).compile();
 
       machine = module.get<PaymentStateMachine>(PaymentStateMachine);
-      await expect(machine.toPending(p.id)).rejects.toThrow(StateTransitionException);
+      await expect(machine.toPending(p.id)).rejects.toThrow(
+        StateTransitionException,
+      );
     });
   });
 });

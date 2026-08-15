@@ -12,7 +12,7 @@
  *  - Only keyPrefix + lastFour are safe to include in responses
  */
 
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { ApiKey } from '@prisma/client';
 
@@ -74,7 +74,8 @@ export class ApiKeyService {
     const keyPrefix = getKeyPrefix(rawKey);
     const lastFour = getKeyLastFour(rawKey);
 
-    const saltRounds = this.config.get<SecurityConfig>('security')!.apiKeySaltRounds;
+    const saltRounds =
+      this.config.get<SecurityConfig>('security')!.apiKeySaltRounds;
     const secretHash = await hashApiKey(rawKey, saltRounds);
 
     const publicId = generateId(PREFIXES.API_KEY);
@@ -124,7 +125,10 @@ export class ApiKeyService {
     const candidates = await this.repository.findActiveByPrefix(keyPrefix);
 
     if (candidates.length === 0) {
-      this.logger.warn({ keyPrefix }, 'No active key candidates found for prefix');
+      this.logger.warn(
+        { keyPrefix },
+        'No active key candidates found for prefix',
+      );
       return null;
     }
 
@@ -144,7 +148,10 @@ export class ApiKeyService {
       }
     }
 
-    this.logger.warn({ keyPrefix }, 'API key verification failed — no bcrypt match');
+    this.logger.warn(
+      { keyPrefix },
+      'API key verification failed — no bcrypt match',
+    );
     return null;
   }
 
@@ -177,12 +184,13 @@ export class ApiKeyService {
     const old = await this.repository.findByPublicId(oldPublicId, businessId);
     if (!old || !old.active) return null;
 
-    const environment = old.environment as 'test' | 'live';
+    const environment = old.environment;
     const rawKey = generateApiKey(environment);
     const keyPrefix = getKeyPrefix(rawKey);
     const lastFour = getKeyLastFour(rawKey);
 
-    const saltRounds = this.config.get<SecurityConfig>('security')!.apiKeySaltRounds;
+    const saltRounds =
+      this.config.get<SecurityConfig>('security')!.apiKeySaltRounds;
     const secretHash = await hashApiKey(rawKey, saltRounds);
     const publicId = generateId(PREFIXES.API_KEY);
 
@@ -199,7 +207,10 @@ export class ApiKeyService {
     if (!newKey) return null;
 
     const { secretHash: _stripped, ...record } = newKey;
-    this.logger.log({ oldPublicId, newPublicId: publicId, businessId }, 'API key rotated');
+    this.logger.log(
+      { oldPublicId, newPublicId: publicId, businessId },
+      'API key rotated',
+    );
     return { rawKey, record };
   }
 
@@ -212,5 +223,4 @@ export class ApiKeyService {
   ): Promise<Omit<ApiKey, 'secretHash'>[]> {
     return this.repository.findAllForBusiness(businessId, environment);
   }
-
 }

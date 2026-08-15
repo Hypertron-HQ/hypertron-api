@@ -7,7 +7,7 @@
 
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { Environment, PaymentCurrency } from '@prisma/client';
+import type { Environment } from '@prisma/client';
 
 import type { StellarConfig } from '@/common/config/stellar.config';
 import { compareDecimalStrings } from '@/common/utils/amount.util';
@@ -200,10 +200,7 @@ export class StellarVerifier {
     return { ok: true, payment: record };
   }
 
-  expectedIssuer(
-    currency: PaymentCurrency | string,
-    environment: Environment,
-  ): string | null {
+  expectedIssuer(currency: string, environment: Environment): string | null {
     if (currency === 'XLM') return null;
     const stellar = this.config.get<StellarConfig>('stellar')!;
     const live = environment === 'live';

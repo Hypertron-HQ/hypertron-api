@@ -73,6 +73,7 @@ export function buildCustomerPage(
   const hasMore = rows.length > limit;
   const data = hasMore ? rows.slice(0, limit) : rows;
   const last = data[data.length - 1];
-  const nextCursor = hasMore && last ? encodeCursor(last.createdAt, last.id) : null;
+  const nextCursor =
+    hasMore && last ? encodeCursor(last.createdAt, last.id) : null;
   return { data, hasMore, nextCursor };
 }

@@ -58,10 +58,7 @@ export class DeveloperCustomersController {
   @ApiParam({ name: 'id', description: 'Customer publicId (cus_...)' })
   @ApiResponse({ status: 200, description: 'Customer object' })
   @ApiResponse({ status: 404, description: 'Customer not found' })
-  async findOne(
-    @Param('id') id: string,
-    @CurrentUser() user: SessionUser,
-  ) {
+  async findOne(@Param('id') id: string, @CurrentUser() user: SessionUser) {
     const customer = await this.customersService.findOne(id, user.businessId);
     return toCustomerResponse(customer);
   }

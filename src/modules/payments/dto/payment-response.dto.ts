@@ -94,7 +94,9 @@ export interface PaymentEventResponseDto {
   created_at: string;
 }
 
-export function toPaymentEventResponse(evt: PaymentEvent): PaymentEventResponseDto {
+export function toPaymentEventResponse(
+  evt: PaymentEvent,
+): PaymentEventResponseDto {
   return {
     id: evt.publicId,
     object: 'payment_event',

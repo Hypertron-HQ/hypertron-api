@@ -1,5 +1,9 @@
 // Hypertron Payments API — Prisma Schema (MongoDB)
-// Shares the `hypertron` database with hypertron-core-backend.
+//
+// Database: `hypertron_api` (own DB on the Atlas cluster — A5).
+// Owns: api_keys, customers, payments, payment_events, webhook_*,
+// idempotency_records, checkout_links, merchant_settings.
+// Does NOT own Business / PaymentLink / AuthChallenge (hypertron-core-backend).
 // businessId is always a core Business.id cuid string (never ObjectId).
 
 generator client {
@@ -40,43 +44,42 @@ enum DeliveryStatus {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Core-shared read/write models (same collections as hypertron-core-backend)
+// CheckoutLink — API-owned hosted checkout record (publicId = cl_…)
 // ─────────────────────────────────────────────────────────────────────────────
 
-model Business {
-  id             String    @id @default(cuid()) @map("_id")
-  walletAddress  String    @unique
-  receiveAddress String?
-  name           String?
-  email          String?
-  createdAt      DateTime  @default(now())
-
-  paymentLinks PaymentLink[]
-
-  @@map("Business")
-}
-
-model PaymentLink {
-  id                 String    @id @default(cuid()) @map("_id")
+model CheckoutLink {
+  id                 String          @id @default(auto()) @map("_id") @db.ObjectId
+  publicId           String          @unique
   businessId         String
-  business           Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  amount             String?
-  currency           String    @default("USDC")
-  purpose            String?
-  clientName         String?
-  workflowStage      String?
-  metadata           String?
-  paymentMethods     String[]  @default(["wallet", "qr"])
-  expiresAt          DateTime?
-  linkMemo           String    @unique
+  environment        Environment
+  amount             String
+  currency           PaymentCurrency
+  description        String?
+  linkMemo           String          @unique
   destinationAddress String
+  expiresAt          DateTime?
   paidAt             DateTime?
   paymentTxHash      String?
-  createdAt          DateTime  @default(now())
+  createdAt          DateTime        @default(now())
 
-  @@index(businessId)
-  @@index([businessId, paidAt])
-  @@map("PaymentLink")
+  @@index([businessId])
+  @@index([businessId, environment])
+  @@map("checkout_links")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MerchantSettings — denormalized from core (receive + wallet for session)
+// Populated by core via PUT /internal/merchant-settings (non-blocking).
+// ─────────────────────────────────────────────────────────────────────────────
+
+model MerchantSettings {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  businessId     String   @unique
+  walletAddress  String   @unique
+  receiveAddress String?
+  updatedAt      DateTime @updatedAt
+
+  @@map("merchant_settings")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -145,7 +148,7 @@ model Payment {
   customer           Customer?       @relation(fields: [customerId], references: [id])
   metadata           Json            @default("{}")
   checkoutUrl        String
-  paymentLinkId      String          @unique
+  checkoutLinkId     String          @unique
   linkMemo           String          @unique
   destinationAddress String
   payerAddress       String?

@@ -6,7 +6,7 @@
 
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import * as request from 'supertest';
+import request from 'supertest';
 import type { INestApplication } from '@nestjs/common';
 import { ValidationPipe } from '@nestjs/common';
 
@@ -34,7 +34,7 @@ function matchesWhere<T extends Record<string, unknown>>(
       expected !== null &&
       typeof expected === 'object' &&
       !Array.isArray(expected) &&
-      'in' in (expected as object)
+      'in' in expected
     ) {
       const values = (expected as { in: unknown[] }).in;
       return values.includes(actual);
@@ -45,9 +45,12 @@ function matchesWhere<T extends Record<string, unknown>>(
 
 class MockPrismaService {
   private keys: ApiKey[] = [];
-  private businesses: { id: string; walletAddress: string }[] = [
-    { id: OWNER_BUSINESS_ID, walletAddress: OWNER_WALLET },
-    { id: OTHER_BUSINESS_ID, walletAddress: OTHER_WALLET },
+  private merchantSettingsRows: {
+    businessId: string;
+    walletAddress: string;
+  }[] = [
+    { businessId: OWNER_BUSINESS_ID, walletAddress: OWNER_WALLET },
+    { businessId: OTHER_BUSINESS_ID, walletAddress: OTHER_WALLET },
   ];
 
   seed(key: ApiKey) {
@@ -86,18 +89,18 @@ class MockPrismaService {
     },
   };
 
-  readonly business = {
+  readonly merchantSettings = {
     findUnique: async (args: {
-      where: { walletAddress?: string; id?: string };
-      select?: { id?: boolean };
+      where: { walletAddress?: string; businessId?: string };
+      select?: { businessId?: boolean };
     }) => {
-      const row = this.businesses.find((b) =>
+      const row = this.merchantSettingsRows.find((b) =>
         args.where.walletAddress
           ? b.walletAddress === args.where.walletAddress
-          : b.id === args.where.id,
+          : b.businessId === args.where.businessId,
       );
       if (!row) return null;
-      return args.select?.id ? { id: row.id } : row;
+      return args.select?.businessId ? { businessId: row.businessId } : row;
     },
   };
 

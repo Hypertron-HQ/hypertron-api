@@ -11,11 +11,7 @@
  * Returns 403 PermissionException when the role is insufficient.
  */
 
-import {
-  CanActivate,
-  ExecutionContext,
-  Injectable,
-} from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 
@@ -33,10 +29,9 @@ export class RolesGuard implements CanActivate {
 
   canActivate(context: ExecutionContext): boolean {
     // Read required roles from handler metadata (set by @Roles decorator)
-    const requiredRoles = this.reflector.getAllAndOverride<UserRole[] | undefined>(
-      ROLES_KEY,
-      [context.getHandler(), context.getClass()],
-    );
+    const requiredRoles = this.reflector.getAllAndOverride<
+      UserRole[] | undefined
+    >(ROLES_KEY, [context.getHandler(), context.getClass()]);
 
     // No @Roles decorator — any authenticated user may proceed
     if (!requiredRoles || requiredRoles.length === 0) {

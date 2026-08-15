@@ -45,7 +45,10 @@ export class CustomersController {
     @Query() query: ListCustomersDto,
     @CurrentMerchant() merchant: MerchantContext,
   ) {
-    const page = await this.customersService.findAll(query, merchant.businessId);
+    const page = await this.customersService.findAll(
+      query,
+      merchant.businessId,
+    );
     return toCustomerListResponse(page.data, page.hasMore, page.nextCursor);
   }
 
@@ -60,7 +63,10 @@ export class CustomersController {
     @Param('id') id: string,
     @CurrentMerchant() merchant: MerchantContext,
   ) {
-    const customer = await this.customersService.findOne(id, merchant.businessId);
+    const customer = await this.customersService.findOne(
+      id,
+      merchant.businessId,
+    );
     return toCustomerResponse(customer);
   }
 }

@@ -31,11 +31,16 @@
 
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import * as request from 'supertest';
+import request from 'supertest';
 import * as crypto from 'crypto';
 import type { INestApplication } from '@nestjs/common';
 import { ValidationPipe } from '@nestjs/common';
-import type { Payment, PaymentEvent, Customer, IdempotencyRecord } from '@prisma/client';
+import type {
+  Payment,
+  PaymentEvent,
+  Customer,
+  IdempotencyRecord,
+} from '@prisma/client';
 import { PaymentStatus } from '@prisma/client';
 
 import securityConfig from '@/common/config/security.config';
@@ -54,23 +59,32 @@ class InMemoryStore {
   customers: Customer[] = [];
   apiKeys: ApiKey[] = [];
   idempotency: IdempotencyRecord[] = [];
-  businesses: { id: string; walletAddress: string; receiveAddress: string | null }[] = [];
-  paymentLinks: {
+  merchantSettings: {
     id: string;
     businessId: string;
-    amount: string | null;
+    walletAddress: string;
+    receiveAddress: string | null;
+  }[] = [];
+  checkoutLinks: {
+    id: string;
+    publicId: string;
+    businessId: string;
+    environment: string;
+    amount: string;
     currency: string;
-    purpose: string | null;
-    metadata: string | null;
-    paymentMethods: string[];
-    expiresAt: Date | null;
+    description: string | null;
     linkMemo: string;
     destinationAddress: string;
+    expiresAt: Date | null;
+    paidAt: Date | null;
+    paymentTxHash: string | null;
     createdAt: Date;
   }[] = [];
 
   private nextId = 0;
-  genId() { return `oid_${++this.nextId}`; }
+  genId() {
+    return `oid_${++this.nextId}`;
+  }
 }
 
 class MockPrismaService {
@@ -100,78 +114,103 @@ class MockPrismaService {
       this.store.payments.push(p);
       return p;
     }),
-    findFirst: jest.fn(async ({ where }: { where: Partial<Payment> }) =>
-      this.store.payments.find((p) =>
-        Object.entries(where).every(([k, v]) => (p as Record<string, unknown>)[k] === v),
-      ) ?? null,
+    findFirst: jest.fn(
+      async ({ where }: { where: Partial<Payment> }) =>
+        this.store.payments.find((p) =>
+          Object.entries(where).every(
+            ([k, v]) => (p as Record<string, unknown>)[k] === v,
+          ),
+        ) ?? null,
     ),
-    findUnique: jest.fn(async ({ where }: { where: { id?: string; publicId?: string } }) =>
-      this.store.payments.find((p) =>
-        (where.id ? p.id === where.id : true) &&
-        (where.publicId ? p.publicId === where.publicId : true),
-      ) ?? null,
+    findUnique: jest.fn(
+      async ({ where }: { where: { id?: string; publicId?: string } }) =>
+        this.store.payments.find(
+          (p) =>
+            (where.id ? p.id === where.id : true) &&
+            (where.publicId ? p.publicId === where.publicId : true),
+        ) ?? null,
     ),
-    findMany: jest.fn(async ({ where, take }: {
-      where?: Partial<Payment> & {
-        OR?: Array<Record<string, unknown>>;
-        environment?: string;
-      };
-      take?: number;
-      orderBy?: object[];
-    }) => {
-      let results = this.store.payments.filter((p) => {
-        if (where?.businessId && p.businessId !== where.businessId) return false;
-        if (where?.environment && p.environment !== where.environment) return false;
-        if (where?.OR?.length) {
-          return where.OR.some((clause) => {
-            const createdAt = clause.createdAt as
-              | Date
-              | { lt?: Date }
-              | undefined;
-            if (
-              createdAt &&
-              typeof createdAt === 'object' &&
-              !(createdAt instanceof Date) &&
-              createdAt.lt
-            ) {
-              return p.createdAt.getTime() < createdAt.lt.getTime();
-            }
-            if (createdAt instanceof Date && typeof clause.id === 'object') {
-              const idClause = clause.id as { lt?: string };
-              return (
-                p.createdAt.getTime() === createdAt.getTime() &&
-                !!idClause.lt &&
-                p.id < idClause.lt
-              );
-            }
+    findMany: jest.fn(
+      async ({
+        where,
+        take,
+      }: {
+        where?: Partial<Payment> & {
+          OR?: Array<Record<string, unknown>>;
+          environment?: string;
+        };
+        take?: number;
+        orderBy?: object[];
+      }) => {
+        let results = this.store.payments.filter((p) => {
+          if (where?.businessId && p.businessId !== where.businessId)
             return false;
-          });
-        }
-        return true;
-      });
-      results = results
-        .slice()
-        .sort((a, b) => {
+          if (where?.environment && p.environment !== where.environment)
+            return false;
+          if (where?.OR?.length) {
+            return where.OR.some((clause) => {
+              const createdAt = clause.createdAt as
+                Date | { lt?: Date } | undefined;
+              if (
+                createdAt &&
+                typeof createdAt === 'object' &&
+                !(createdAt instanceof Date) &&
+                createdAt.lt
+              ) {
+                return p.createdAt.getTime() < createdAt.lt.getTime();
+              }
+              if (createdAt instanceof Date && typeof clause.id === 'object') {
+                const idClause = clause.id as { lt?: string };
+                return (
+                  p.createdAt.getTime() === createdAt.getTime() &&
+                  !!idClause.lt &&
+                  p.id < idClause.lt
+                );
+              }
+              return false;
+            });
+          }
+          return true;
+        });
+        results = results.slice().sort((a, b) => {
           const byTime = b.createdAt.getTime() - a.createdAt.getTime();
           if (byTime !== 0) return byTime;
           return b.id < a.id ? -1 : b.id > a.id ? 1 : 0;
         });
-      if (take) results = results.slice(0, take);
-      return results;
-    }),
-    updateMany: jest.fn(async ({ where, data }: { where: { id: string; status?: { in: PaymentStatus[] } }; data: Partial<Payment> }) => {
-      const p = this.store.payments.find((x) => x.id === where.id);
-      if (!p) return { count: 0 };
-      if (where.status?.in && !where.status.in.includes(p.status)) return { count: 0 };
-      Object.assign(p, data);
-      p.updatedAt = new Date();
-      return { count: 1 };
-    }),
-    update: jest.fn(async ({ where, data }: { where: { id: string }; data: Partial<Payment> }) => {
-      const p = this.store.payments.find((x) => x.id === where.id);
-      if (p) Object.assign(p, data);
-      return p!;
-    }),
+        if (take) results = results.slice(0, take);
+        return results;
+      },
+    ),
+    updateMany: jest.fn(
+      async ({
+        where,
+        data,
+      }: {
+        where: { id: string; status?: { in: PaymentStatus[] } };
+        data: Partial<Payment>;
+      }) => {
+        const p = this.store.payments.find((x) => x.id === where.id);
+        if (!p) return { count: 0 };
+        if (where.status?.in && !where.status.in.includes(p.status))
+          return { count: 0 };
+        Object.assign(p, data);
+        p.updatedAt = new Date();
+        return { count: 1 };
+      },
+    ),
+    update: jest.fn(
+      async ({
+        where,
+        data,
+      }: {
+        where: { id: string };
+        data: Partial<Payment>;
+      }) => {
+        const p = this.store.payments.find((x) => x.id === where.id);
+        if (p) Object.assign(p, data);
+        return p!;
+      },
+    ),
   };
 
   readonly paymentEvent = {
@@ -184,20 +223,29 @@ class MockPrismaService {
       this.store.events.push(evt);
       return evt;
     }),
-    findMany: jest.fn(async ({ where }: { where: { paymentId?: string; businessId?: string } }) =>
-      this.store.events.filter((e) => {
-        if (where.paymentId && e.paymentId !== where.paymentId) return false;
-        if (where.businessId && e.businessId !== where.businessId) return false;
-        return true;
-      }),
+    findMany: jest.fn(
+      async ({
+        where,
+      }: {
+        where: { paymentId?: string; businessId?: string };
+      }) =>
+        this.store.events.filter((e) => {
+          if (where.paymentId && e.paymentId !== where.paymentId) return false;
+          if (where.businessId && e.businessId !== where.businessId)
+            return false;
+          return true;
+        }),
     ),
   };
 
   readonly customer = {
-    findFirst: jest.fn(async ({ where }: { where: Partial<Customer> }) =>
-      this.store.customers.find((c) =>
-        Object.entries(where).every(([k, v]) => (c as Record<string, unknown>)[k] === v),
-      ) ?? null,
+    findFirst: jest.fn(
+      async ({ where }: { where: Partial<Customer> }) =>
+        this.store.customers.find((c) =>
+          Object.entries(where).every(
+            ([k, v]) => (c as Record<string, unknown>)[k] === v,
+          ),
+        ) ?? null,
     ),
     create: jest.fn(async ({ data }: { data: Partial<Customer> }) => {
       const c: Customer = {
@@ -222,19 +270,32 @@ class MockPrismaService {
   readonly apiKey = {
     findMany: jest.fn(async ({ where }: { where: Partial<ApiKey> }) =>
       this.store.apiKeys.filter((k) =>
-        Object.entries(where).every(([f, v]) => (k as Record<string, unknown>)[f] === v),
+        Object.entries(where).every(
+          ([f, v]) => (k as Record<string, unknown>)[f] === v,
+        ),
       ),
     ),
-    findFirst: jest.fn(async ({ where }: { where: Partial<ApiKey> }) =>
-      this.store.apiKeys.find((k) =>
-        Object.entries(where).every(([f, v]) => (k as Record<string, unknown>)[f] === v),
-      ) ?? null,
+    findFirst: jest.fn(
+      async ({ where }: { where: Partial<ApiKey> }) =>
+        this.store.apiKeys.find((k) =>
+          Object.entries(where).every(
+            ([f, v]) => (k as Record<string, unknown>)[f] === v,
+          ),
+        ) ?? null,
     ),
-    update: jest.fn(async ({ where, data }: { where: { id: string }; data: Partial<ApiKey> }) => {
-      const k = this.store.apiKeys.find((x) => x.id === where.id);
-      if (k) Object.assign(k, data);
-      return k!;
-    }),
+    update: jest.fn(
+      async ({
+        where,
+        data,
+      }: {
+        where: { id: string };
+        data: Partial<ApiKey>;
+      }) => {
+        const k = this.store.apiKeys.find((x) => x.id === where.id);
+        if (k) Object.assign(k, data);
+        return k!;
+      },
+    ),
     create: jest.fn(async ({ data }: { data: Partial<ApiKey> }) => {
       const k: ApiKey = {
         id: this.store.genId(),
@@ -250,16 +311,25 @@ class MockPrismaService {
   };
 
   readonly idempotencyRecord = {
-    findFirst: jest.fn(async ({ where }: { where: Partial<IdempotencyRecord> }) =>
-      this.store.idempotency.find((r) =>
-        Object.entries(where).every(([k, v]) => (r as Record<string, unknown>)[k] === v),
-      ) ?? null,
+    findFirst: jest.fn(
+      async ({ where }: { where: Partial<IdempotencyRecord> }) =>
+        this.store.idempotency.find((r) =>
+          Object.entries(where).every(
+            ([k, v]) => (r as Record<string, unknown>)[k] === v,
+          ),
+        ) ?? null,
     ),
     create: jest.fn(async ({ data }: { data: Partial<IdempotencyRecord> }) => {
       const existing = this.store.idempotency.find(
-        (r) => r.businessId === data.businessId && r.apiKeyId === data.apiKeyId && r.key === data.key,
+        (r) =>
+          r.businessId === data.businessId &&
+          r.apiKeyId === data.apiKeyId &&
+          r.key === data.key,
       );
-      if (existing) { const err: { code: string } = { code: 'P2002' }; throw err; }
+      if (existing) {
+        const err: { code: string } = { code: 'P2002' };
+        throw err;
+      }
       const r: IdempotencyRecord = {
         id: this.store.genId(),
         createdAt: new Date(),
@@ -269,66 +339,87 @@ class MockPrismaService {
       this.store.idempotency.push(r);
       return r;
     }),
-    updateMany: jest.fn(async ({ where, data }: { where: Partial<IdempotencyRecord>; data: Partial<IdempotencyRecord> }) => {
-      const r = this.store.idempotency.find((x) =>
-        x.businessId === where.businessId && x.apiKeyId === where.apiKeyId && x.key === where.key,
-      );
-      if (r) Object.assign(r, data);
-      return { count: r ? 1 : 0 };
-    }),
+    updateMany: jest.fn(
+      async ({
+        where,
+        data,
+      }: {
+        where: Partial<IdempotencyRecord>;
+        data: Partial<IdempotencyRecord>;
+      }) => {
+        const r = this.store.idempotency.find(
+          (x) =>
+            x.businessId === where.businessId &&
+            x.apiKeyId === where.apiKeyId &&
+            x.key === where.key,
+        );
+        if (r) Object.assign(r, data);
+        return { count: r ? 1 : 0 };
+      },
+    ),
   };
 
-  readonly business = {
-    findUnique: jest.fn(async ({
-      where,
-      select,
-    }: {
-      where: { id?: string; walletAddress?: string };
-      select?: { receiveAddress?: boolean; id?: boolean };
-    }) => {
-      const row = this.store.businesses.find((b) =>
-        where.id ? b.id === where.id : b.walletAddress === where.walletAddress,
-      );
-      if (!row) return null;
-      if (select?.receiveAddress) {
-        return { receiveAddress: row.receiveAddress };
-      }
-      return { id: row.id, receiveAddress: row.receiveAddress };
-    }),
+  readonly merchantSettings = {
+    findUnique: jest.fn(
+      async ({
+        where,
+        select,
+      }: {
+        where: { businessId?: string; walletAddress?: string };
+        select?: { receiveAddress?: boolean; businessId?: boolean };
+      }) => {
+        const row = this.store.merchantSettings.find((b) =>
+          where.businessId
+            ? b.businessId === where.businessId
+            : b.walletAddress === where.walletAddress,
+        );
+        if (!row) return null;
+        if (select?.receiveAddress) {
+          return { receiveAddress: row.receiveAddress };
+        }
+        return row;
+      },
+    ),
   };
 
-  readonly paymentLink = {
-    findUnique: jest.fn(async ({
-      where,
-      select,
-    }: {
-      where: { linkMemo?: string; id?: string };
-      select?: { id?: boolean };
-    }) => {
-      const row = this.store.paymentLinks.find((l) =>
-        where.linkMemo ? l.linkMemo === where.linkMemo : l.id === where.id,
-      );
-      if (!row) return null;
-      return select?.id ? { id: row.id } : row;
-    }),
+  readonly checkoutLink = {
+    findUnique: jest.fn(
+      async ({
+        where,
+        select,
+      }: {
+        where: { linkMemo?: string; id?: string; publicId?: string };
+        select?: { id?: boolean };
+      }) => {
+        const row = this.store.checkoutLinks.find((l) => {
+          if (where.linkMemo) return l.linkMemo === where.linkMemo;
+          if (where.publicId) return l.publicId === where.publicId;
+          return l.id === where.id;
+        });
+        if (!row) return null;
+        return select?.id ? { id: row.id } : row;
+      },
+    ),
     create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
       const link = {
-        id: `pl_${this.store.genId()}`,
+        id: `cloid_${this.store.genId()}`,
         createdAt: new Date(),
-        purpose: null,
-        metadata: null,
-        paymentMethods: ['wallet', 'qr'],
+        description: null,
         expiresAt: null,
+        paidAt: null,
+        paymentTxHash: null,
         ...data,
-      } as InMemoryStore['paymentLinks'][number];
-      this.store.paymentLinks.push(link);
+      } as InMemoryStore['checkoutLinks'][number];
+      this.store.checkoutLinks.push(link);
       return link;
     }),
   };
 
   async $connect() {}
   async $disconnect() {}
-  async $transaction(ops: Promise<unknown>[]) { return Promise.all(ops); }
+  async $transaction(ops: Promise<unknown>[]) {
+    return Promise.all(ops);
+  }
 }
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
@@ -380,7 +471,8 @@ function seedPayment(
   const now = new Date();
   const p: Payment = {
     id: prisma.store.genId(),
-    publicId: overrides.publicId ?? `pay_seed_${prisma.store.payments.length + 1}`,
+    publicId:
+      overrides.publicId ?? `pay_seed_${prisma.store.payments.length + 1}`,
     businessId: overrides.businessId ?? BIZ_ID,
     environment: overrides.environment ?? 'test',
     amount: overrides.amount ?? '10.00',
@@ -390,7 +482,7 @@ function seedPayment(
     customerId: overrides.customerId ?? null,
     metadata: overrides.metadata ?? {},
     checkoutUrl: overrides.checkoutUrl ?? 'http://localhost/checkout',
-    paymentLinkId: overrides.paymentLinkId ?? 'plink_seed',
+    checkoutLinkId: overrides.checkoutLinkId ?? 'cloid_seed',
     linkMemo: overrides.linkMemo ?? 'hpl_seed',
     destinationAddress: overrides.destinationAddress ?? 'GDEST',
     payerAddress: null,
@@ -405,7 +497,7 @@ function seedPayment(
     createdAt: overrides.createdAt ?? now,
     updatedAt: overrides.updatedAt ?? now,
     ...overrides,
-  } as Payment;
+  };
   prisma.store.payments.push(p);
   return p;
 }
@@ -428,11 +520,13 @@ describe('/v1/payments (integration)', () => {
 
   beforeEach(async () => {
     prisma = new MockPrismaService();
-    prisma.store.businesses.push({
-      id: BIZ_ID,
+    prisma.store.merchantSettings.push({
+      id: 'ms_1',
+      businessId: BIZ_ID,
       walletAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
       // Classic G… destination (56 chars) — never pool C…
-      receiveAddress: 'GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H',
+      receiveAddress:
+        'GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H',
     });
     const seeded = await seedApiKey(prisma, {
       env: 'test',
@@ -468,7 +562,9 @@ describe('/v1/payments (integration)', () => {
     await app.init();
   });
 
-  afterEach(async () => { if (app) await app.close(); });
+  afterEach(async () => {
+    if (app) await app.close();
+  });
 
   const auth = () => ({ Authorization: `Bearer ${rawKey}` });
 
@@ -488,8 +584,42 @@ describe('/v1/payments (integration)', () => {
       expect(res.body.status).toBe('pending');
       expect(res.body.amount).toBe('10.50');
       expect(res.body.currency).toBe('USDC');
-      expect(res.body.checkout_url).toMatch(/^http/);
+      expect(res.body.checkout_url).toMatch(/^http.*\/pay\/cl_/);
       expect(res.body.link_memo).toMatch(/^hpl_/);
+      // API-created links are never private settlement
+      expect(prisma.store.checkoutLinks).toHaveLength(1);
+      const link = prisma.store.checkoutLinks[0] as Record<string, unknown>;
+      expect(link.metadata).toBeUndefined();
+      expect(link.shieldSalt).toBeUndefined();
+      expect(link.shieldCommitment).toBeUndefined();
+      expect(link.shieldProof).toBeUndefined();
+      expect(link).not.toHaveProperty('privateSettlement');
+    });
+
+    it('201 — dto.metadata stays on Payment only; CheckoutLink stays non-private', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/v1/payments')
+        .set(auth())
+        .set('Idempotency-Key', 'idem-meta-private-flag')
+        .send({
+          ...VALID_BODY,
+          metadata: { privateSettlement: true, note: 'must not hit link' },
+        })
+        .expect(201);
+
+      const payment = prisma.store.payments.find(
+        (p) => p.publicId === res.body.id,
+      );
+      expect(payment?.metadata).toMatchObject({ privateSettlement: true });
+
+      const link = prisma.store.checkoutLinks.find(
+        (l) => l.id === payment?.checkoutLinkId,
+      );
+      expect(link).toBeTruthy();
+      expect(link as { metadata?: unknown }).not.toHaveProperty('metadata');
+      expect(link as { shieldCommitment?: unknown }).not.toHaveProperty(
+        'shieldCommitment',
+      );
     });
 
     it('201 — idempotency replay returns identical response', async () => {
@@ -542,7 +672,7 @@ describe('/v1/payments (integration)', () => {
         responseBody: {},
         createdAt: new Date(),
         expiresAt: new Date(Date.now() + 86400000),
-      } as IdempotencyRecord);
+      });
 
       const res = await request(app.getHttpServer())
         .post('/v1/payments')
@@ -570,9 +700,13 @@ describe('/v1/payments (integration)', () => {
       ]);
 
       // Guarantees: at most one payment; loser is 409 in-flight OR both 201 replay same id
-      expect([r1.status, r2.status].every((s) => s === 201 || s === 409)).toBe(true);
+      expect([r1.status, r2.status].every((s) => s === 201 || s === 409)).toBe(
+        true,
+      );
       expect([r1.status, r2.status].includes(201)).toBe(true);
-      expect(prisma.store.payments.filter((p) => p.businessId === BIZ_ID)).toHaveLength(1);
+      expect(
+        prisma.store.payments.filter((p) => p.businessId === BIZ_ID),
+      ).toHaveLength(1);
 
       if (r1.status === 201 && r2.status === 201) {
         expect(r1.body.id).toBe(r2.body.id);
@@ -706,6 +840,66 @@ describe('/v1/payments (integration)', () => {
       expect(res.body.error.type).toBe('resource_missing');
     });
 
+    it('404 — live key cannot read or cancel a test payment', async () => {
+      const testPay = seedPayment(prisma, {
+        publicId: 'pay_test_for_live_key',
+        environment: 'test',
+        businessId: BIZ_ID,
+        status: PaymentStatus.pending,
+      });
+      const liveSeeded = await seedApiKey(prisma, {
+        env: 'live',
+        businessId: BIZ_ID,
+        publicId: 'key_live_iso',
+      });
+      const liveAuth = {
+        Authorization: `Bearer ${liveSeeded.rawKey}`,
+      };
+
+      await request(app.getHttpServer())
+        .get(`/v1/payments/${testPay.publicId}`)
+        .set(liveAuth)
+        .expect(404);
+
+      await request(app.getHttpServer())
+        .post(`/v1/payments/${testPay.publicId}/cancel`)
+        .set(liveAuth)
+        .expect(404);
+
+      // Still pending — live key must not mutate
+      expect(
+        prisma.store.payments.find((p) => p.publicId === testPay.publicId)
+          ?.status,
+      ).toBe(PaymentStatus.pending);
+    });
+
+    it('200 — live key list excludes test payments', async () => {
+      seedPayment(prisma, {
+        publicId: 'pay_test_hidden_from_live',
+        environment: 'test',
+        businessId: BIZ_ID,
+      });
+      seedPayment(prisma, {
+        publicId: 'pay_live_visible',
+        environment: 'live',
+        businessId: BIZ_ID,
+      });
+      const liveSeeded = await seedApiKey(prisma, {
+        env: 'live',
+        businessId: BIZ_ID,
+        publicId: 'key_live_list',
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/v1/payments')
+        .set({ Authorization: `Bearer ${liveSeeded.rawKey}` })
+        .expect(200);
+
+      const ids = (res.body.data as Array<{ id: string }>).map((p) => p.id);
+      expect(ids).toContain('pay_live_visible');
+      expect(ids).not.toContain('pay_test_hidden_from_live');
+    });
+
     it('404 — cross-merchant isolation (BIZ_A cannot see BIZ_B payment)', async () => {
       const other = seedPayment(prisma, {
         publicId: 'pay_other_biz',
@@ -722,9 +916,7 @@ describe('/v1/payments (integration)', () => {
     });
 
     it('401 — missing auth', async () => {
-      await request(app.getHttpServer())
-        .get('/v1/payments/pay_1')
-        .expect(401);
+      await request(app.getHttpServer()).get('/v1/payments/pay_1').expect(401);
     });
   });
 
@@ -745,9 +937,15 @@ describe('/v1/payments (integration)', () => {
 
     it('200 — lists created payments', async () => {
       await request(app.getHttpServer())
-        .post('/v1/payments').set(auth()).set('Idempotency-Key', 'list-1').send(VALID_BODY);
+        .post('/v1/payments')
+        .set(auth())
+        .set('Idempotency-Key', 'list-1')
+        .send(VALID_BODY);
       await request(app.getHttpServer())
-        .post('/v1/payments').set(auth()).set('Idempotency-Key', 'list-2').send({ ...VALID_BODY, amount: '5.00' });
+        .post('/v1/payments')
+        .set(auth())
+        .set('Idempotency-Key', 'list-2')
+        .send({ ...VALID_BODY, amount: '5.00' });
 
       const res = await request(app.getHttpServer())
         .get('/v1/payments')
@@ -778,7 +976,9 @@ describe('/v1/payments (integration)', () => {
       expect(page1.body.next_cursor).toEqual(expect.any(String));
 
       const page2 = await request(app.getHttpServer())
-        .get(`/v1/payments?limit=2&cursor=${encodeURIComponent(page1.body.next_cursor)}`)
+        .get(
+          `/v1/payments?limit=2&cursor=${encodeURIComponent(page1.body.next_cursor)}`,
+        )
         .set(auth())
         .expect(200);
 
@@ -799,8 +999,16 @@ describe('/v1/payments (integration)', () => {
         .send(VALID_BODY)
         .expect(201);
 
-      seedPayment(prisma, { publicId: 'pay_live_hidden', environment: 'live', businessId: BIZ_ID });
-      seedPayment(prisma, { publicId: 'pay_other_hidden', environment: 'test', businessId: BIZ_B });
+      seedPayment(prisma, {
+        publicId: 'pay_live_hidden',
+        environment: 'live',
+        businessId: BIZ_ID,
+      });
+      seedPayment(prisma, {
+        publicId: 'pay_other_hidden',
+        environment: 'test',
+        businessId: BIZ_B,
+      });
 
       const res = await request(app.getHttpServer())
         .get('/v1/payments')
@@ -869,7 +1077,9 @@ describe('/v1/payments (integration)', () => {
         .expect(201);
 
       // Force the payment to completed state in the store
-      const p = prisma.store.payments.find((x) => x.publicId === created.body.id);
+      const p = prisma.store.payments.find(
+        (x) => x.publicId === created.body.id,
+      );
       if (p) p.status = PaymentStatus.completed;
 
       const res = await request(app.getHttpServer())

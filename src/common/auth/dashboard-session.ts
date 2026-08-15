@@ -108,10 +108,7 @@ function hasValidExpiration(value: unknown): value is number {
   );
 }
 
-function readCookie(
-  header: string | undefined,
-  name: string,
-): string | null {
+function readCookie(header: string | undefined, name: string): string | null {
   if (!header) return null;
   for (const entry of header.split(';')) {
     const [rawName, ...rawValue] = entry.trim().split('=');

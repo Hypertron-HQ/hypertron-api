@@ -31,9 +31,9 @@ export class ApiKeyGuard implements CanActivate {
   constructor(private readonly apiKeyService: ApiKeyService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<
-      Request & { [MERCHANT_CONTEXT_KEY]: MerchantContext }
-    >();
+    const request = context
+      .switchToHttp()
+      .getRequest<Request & { [MERCHANT_CONTEXT_KEY]: MerchantContext }>();
 
     const rawKey = this.extractBearerToken(request);
 
@@ -59,7 +59,7 @@ export class ApiKeyGuard implements CanActivate {
     // Attach merchant context to the request
     request[MERCHANT_CONTEXT_KEY] = {
       businessId: result.record.businessId,
-      environment: result.record.environment as 'test' | 'live',
+      environment: result.record.environment,
       apiKeyId: result.record.publicId,
     };
 

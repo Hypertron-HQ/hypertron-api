@@ -39,8 +39,8 @@ async function bootstrap(): Promise<void> {
       allowedOrigins.length > 0
         ? allowedOrigins
         : appConfig.nodeEnv === 'production'
-          ? false           // block all cross-origin in prod if not configured
-          : true,           // allow all in local dev
+          ? false // block all cross-origin in prod if not configured
+          : true, // allow all in local dev
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
       'Content-Type',
@@ -48,16 +48,20 @@ async function bootstrap(): Promise<void> {
       'Idempotency-Key',
       'X-Request-Id',
     ],
-    exposedHeaders: ['X-Request-Id', 'X-RateLimit-Limit', 'X-RateLimit-Remaining'],
+    exposedHeaders: [
+      'X-Request-Id',
+      'X-RateLimit-Limit',
+      'X-RateLimit-Remaining',
+    ],
     credentials: true,
   });
 
   // ── Global validation pipe ─────────────────────────────────────────────────
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true,              // strip undeclared properties
-      forbidNonWhitelisted: true,   // throw 400 for unknown properties
-      transform: true,              // coerce query param types
+      whitelist: true, // strip undeclared properties
+      forbidNonWhitelisted: true, // throw 400 for unknown properties
+      transform: true, // coerce query param types
       transformOptions: {
         enableImplicitConversion: false,
       },
@@ -79,7 +83,11 @@ async function bootstrap(): Promise<void> {
       )
       .setVersion('1.0')
       .addBearerAuth(
-        { type: 'http', scheme: 'bearer', bearerFormat: 'sk_test_... / sk_live_...' },
+        {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'sk_test_... / sk_live_...',
+        },
         'ApiKey',
       )
       .addApiKey(

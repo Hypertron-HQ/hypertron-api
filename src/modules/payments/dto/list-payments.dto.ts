@@ -17,7 +17,8 @@ export class ListPaymentsDto {
   limit?: number = 25;
 
   @ApiPropertyOptional({
-    description: 'Opaque cursor from a previous list response next_cursor field',
+    description:
+      'Opaque cursor from a previous list response next_cursor field',
   })
   @IsOptional()
   @IsString()
