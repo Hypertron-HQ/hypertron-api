@@ -20,6 +20,7 @@ import { CustomersModule } from './modules/customers/customers.module';
 import { ReconcilerModule } from './modules/reconciler/reconciler.module';
 import { InternalModule } from './modules/internal/internal.module';
 import { CheckoutLinksModule } from './modules/checkout-links/checkout-links.module';
+import { WebhooksModule } from './modules/webhooks/webhooks.module';
 
 @Module({
   imports: [
@@ -64,6 +65,8 @@ import { CheckoutLinksModule } from './modules/checkout-links/checkout-links.mod
     HealthModule,
     AuthModule,
     CustomersModule,
+    // Global — provides WEBHOOK_DISPATCHER to EventsService without a cycle.
+    WebhooksModule,
     DeveloperModule,
     PaymentsModule,
     ReconcilerModule,
