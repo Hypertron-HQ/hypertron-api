@@ -82,7 +82,8 @@ export class WebhookEndpointService {
 
   async list(businessId: string): Promise<WebhookEndpoint[]> {
     return this.prisma.webhookEndpoint.findMany({
-      where: { businessId },
+      // Dashboard listing deliberately spans test and live endpoints.
+      where: { businessId, environment: { in: ['test', 'live'] } },
       orderBy: { createdAt: 'desc' },
     });
   }

@@ -102,7 +102,6 @@ model ApiKey {
 
   @@index([businessId])
   @@index([keyPrefix, businessId])
-  @@unique([businessId, environment, keyPrefix])
   @@map("api_keys")
 }
 
@@ -152,7 +151,8 @@ model Payment {
   linkMemo           String          @unique
   destinationAddress String
   payerAddress       String?
-  transactionHash    String?         @unique
+  // Partial unique index is installed at startup; Prisma cannot express it.
+  transactionHash    String?
   assetIssuer        String?
   failureCode        String?
   failureMessage     String?

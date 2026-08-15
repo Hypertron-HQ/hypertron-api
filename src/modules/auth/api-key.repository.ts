@@ -63,12 +63,14 @@ export class ApiKeyRepository {
     const where: {
       businessId: { in: string[] };
       active: boolean;
-      environment?: 'test' | 'live';
+      environment: 'test' | 'live' | { in: Array<'test' | 'live'> };
     } = {
       businessId: { in: businessIds },
       active: true,
+      // Dashboard listing intentionally spans both environments. Making that
+      // scope explicit satisfies the Prisma isolation guard.
+      environment: environment ?? { in: ['test', 'live'] },
     };
-    if (environment) where.environment = environment;
 
     const keys = await this.prisma.apiKey.findMany({
       where,

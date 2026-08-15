@@ -116,13 +116,14 @@ export default async function globalSetup(): Promise<void> {
     },
   });
 
-  // Prisma @unique on optional Mongo fields is not sparse — multiple nulls collide.
-  // Recreate as a sparse unique index so unpaid payments can coexist.
+  // Reproduce the two obsolete production indexes. Application startup must
+  // replace transactionHash with a partial unique index and drop the API-key
+  // prefix uniqueness restriction before the E2E flow starts.
   mongoEval(
-    'db.getSiblingDB("hypertron_e2e").payments.dropIndex("payments_transactionHash_key")',
+    'db.getSiblingDB("hypertron_e2e").payments.createIndex({transactionHash:1},{unique:true,name:"payments_transactionHash_key"})',
   );
   mongoEval(
-    'db.getSiblingDB("hypertron_e2e").payments.createIndex({transactionHash:1},{unique:true,sparse:true,name:"payments_transactionHash_key"})',
+    'db.getSiblingDB("hypertron_e2e").api_keys.createIndex({businessId:1,environment:1,keyPrefix:1},{unique:true,name:"api_keys_businessId_environment_keyPrefix_key"})',
   );
 
   writeFileSync(

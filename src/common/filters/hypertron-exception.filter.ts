@@ -93,9 +93,12 @@ export class HypertronExceptionFilter implements ExceptionFilter {
       }
       const shaped = shapeHttpException(status, body, requestId);
       if (status >= 500) {
-        this.logger.error(
-          { err: exception.message, requestId, status },
+        this.logServerError(
           'Unhandled HttpException',
+          exception,
+          request,
+          requestId,
+          status,
         );
       }
       this.write(response, status, shaped, requestId);
@@ -103,6 +106,10 @@ export class HypertronExceptionFilter implements ExceptionFilter {
     }
 
     if (isPrismaUniqueViolation(exception)) {
+      const target = prismaUniqueTarget(exception);
+      this.logger.warn(
+        `[${requestId}] Prisma unique conflict${target ? ` (${target})` : ''} on ${request.method} ${request.originalUrl || request.url}`,
+      );
       this.write(
         response,
         HttpStatus.CONFLICT,
@@ -117,9 +124,13 @@ export class HypertronExceptionFilter implements ExceptionFilter {
       return;
     }
 
-    const message =
-      exception instanceof Error ? exception.message : 'Unknown error';
-    this.logger.error({ err: message, requestId }, 'Unhandled exception');
+    this.logServerError(
+      'Unhandled exception',
+      exception,
+      request,
+      requestId,
+      HttpStatus.INTERNAL_SERVER_ERROR,
+    );
 
     this.write(
       response,
@@ -144,6 +155,29 @@ export class HypertronExceptionFilter implements ExceptionFilter {
       response.setHeader('X-Request-Id', requestId);
     }
     response.status(status).json({ error: payload });
+  }
+
+  private logServerError(
+    label: string,
+    exception: unknown,
+    request: Request,
+    requestId: string,
+    status: number,
+  ): void {
+    const name = exception instanceof Error ? exception.name : typeof exception;
+    const message =
+      exception instanceof Error ? exception.message : String(exception);
+    const stack = exception instanceof Error ? exception.stack : undefined;
+    const route = `${request.method ?? 'UNKNOWN'} ${
+      request.originalUrl || request.url || 'unknown-path'
+    }`;
+
+    // Keep details in server logs for Render debugging while the HTTP response
+    // remains the generic, non-leaking API error envelope.
+    this.logger.error(
+      `[${requestId}] ${label} (${status}) ${route}: ${name}: ${message}`,
+      stack,
+    );
   }
 }
 
@@ -267,4 +301,13 @@ function statusCode(status: number): string {
 function isPrismaUniqueViolation(exception: unknown): boolean {
   if (!exception || typeof exception !== 'object') return false;
   return (exception as { code?: string }).code === 'P2002';
+}
+
+function prismaUniqueTarget(exception: unknown): string | null {
+  if (!exception || typeof exception !== 'object') return null;
+  const target = (
+    exception as { meta?: { target?: unknown } }
+  ).meta?.target;
+  if (Array.isArray(target)) return target.map(String).join(', ');
+  return typeof target === 'string' ? target : null;
 }

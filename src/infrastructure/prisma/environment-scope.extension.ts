@@ -4,7 +4,8 @@
  * Rules:
  *  - create: data.environment required
  *  - find/update/delete: if where includes businessId (merchant scope),
- *    environment is required — prevents accidental cross-env reads/writes
+ *    environment is required unless the query includes a globally unique
+ *    publicId. Dashboard lists may explicitly request both environments.
  *
  * Worker queries that intentionally scan all environments (e.g. reconciler
  * pending poll by status only) omit businessId and are allowed.
@@ -31,7 +32,15 @@ export class MissingEnvironmentError extends Error {
 function hasEnvironment(obj: unknown): boolean {
   if (!obj || typeof obj !== 'object') return false;
   const env = (obj as { environment?: unknown }).environment;
-  return env === 'test' || env === 'live';
+  if (env === 'test' || env === 'live') return true;
+  if (!env || typeof env !== 'object') return false;
+
+  const values = (env as { in?: unknown }).in;
+  return (
+    Array.isArray(values) &&
+    values.length > 0 &&
+    values.every((value) => value === 'test' || value === 'live')
+  );
 }
 
 function hasBusinessId(obj: unknown): boolean {
@@ -39,7 +48,12 @@ function hasBusinessId(obj: unknown): boolean {
   return 'businessId' in obj;
 }
 
-function assertEnv(
+function hasUniquePublicId(obj: unknown): boolean {
+  if (!obj || typeof obj !== 'object') return false;
+  return typeof (obj as { publicId?: unknown }).publicId === 'string';
+}
+
+export function assertEnvironmentScope(
   model: string,
   operation: string,
   args: { where?: unknown; data?: unknown },
@@ -53,7 +67,11 @@ function assertEnv(
     return;
   }
 
-  if (hasBusinessId(args.where) && !hasEnvironment(args.where)) {
+  if (
+    hasBusinessId(args.where) &&
+    !hasEnvironment(args.where) &&
+    !hasUniquePublicId(args.where)
+  ) {
     throw new MissingEnvironmentError(model, operation);
   }
 }
@@ -63,35 +81,35 @@ export const environmentScopeExtension = Prisma.defineExtension({
   query: {
     $allModels: {
       async findMany({ model, operation, args, query }) {
-        assertEnv(model, operation, args);
+        assertEnvironmentScope(model, operation, args);
         return query(args);
       },
       async findFirst({ model, operation, args, query }) {
-        assertEnv(model, operation, args);
+        assertEnvironmentScope(model, operation, args);
         return query(args);
       },
       async findUnique({ model, operation, args, query }) {
-        assertEnv(model, operation, args);
+        assertEnvironmentScope(model, operation, args);
         return query(args);
       },
       async create({ model, operation, args, query }) {
-        assertEnv(model, operation, args);
+        assertEnvironmentScope(model, operation, args);
         return query(args);
       },
       async update({ model, operation, args, query }) {
-        assertEnv(model, operation, args);
+        assertEnvironmentScope(model, operation, args);
         return query(args);
       },
       async updateMany({ model, operation, args, query }) {
-        assertEnv(model, operation, args);
+        assertEnvironmentScope(model, operation, args);
         return query(args);
       },
       async delete({ model, operation, args, query }) {
-        assertEnv(model, operation, args);
+        assertEnvironmentScope(model, operation, args);
         return query(args);
       },
       async deleteMany({ model, operation, args, query }) {
-        assertEnv(model, operation, args);
+        assertEnvironmentScope(model, operation, args);
         return query(args);
       },
     },

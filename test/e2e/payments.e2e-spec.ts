@@ -143,6 +143,48 @@ describe('HyperTone Payments API (e2e)', () => {
     });
   });
 
+  describe('dashboard control plane', () => {
+    it('lists, creates, rotates, and revokes multiple same-environment keys', async () => {
+      const cookie = sessionCookie(WALLET_A);
+
+      const initial = await request(app.getHttpServer())
+        .get('/api/developer/api-keys')
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(initial.body.data).toHaveLength(1);
+
+      // A second sk_test_ key for the same business must be allowed.
+      const created = await request(app.getHttpServer())
+        .post('/api/developer/api-keys')
+        .set('Cookie', cookie)
+        .send({ name: 'second test key', environment: 'test' })
+        .expect(201);
+      expect(created.body.secret_key).toMatch(/^sk_test_/);
+
+      const rotated = await request(app.getHttpServer())
+        .post(`/api/developer/api-keys/${created.body.id}/rotate`)
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(rotated.body.secret_key).toMatch(/^sk_test_/);
+      expect(rotated.body.id).not.toBe(created.body.id);
+
+      await request(app.getHttpServer())
+        .get('/v1/payments')
+        .set(authHeader(created.body.secret_key as string))
+        .expect(401);
+
+      await request(app.getHttpServer())
+        .post(`/api/developer/api-keys/${rotated.body.id}/revoke`)
+        .set('Cookie', cookie)
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .get('/v1/payments')
+        .set(authHeader(rotated.body.secret_key as string))
+        .expect(401);
+    });
+  });
+
   describe('pagination', () => {
     it('cursor remains stable when new rows are inserted', async () => {
       for (let i = 0; i < 4; i++) {
@@ -252,7 +294,29 @@ describe('HyperTone Payments API (e2e)', () => {
           })
           .expect(201);
 
-        const signingSecret = created.body.signing_secret as string;
+        expect(created.body.signing_secret).toMatch(/^[0-9a-f]{64}$/);
+
+        const listed = await request(app.getHttpServer())
+          .get('/api/developer/webhook-endpoints')
+          .set('Cookie', sessionCookie(WALLET_A))
+          .expect(200);
+        expect(listed.body.data.map((item: { id: string }) => item.id)).toContain(
+          created.body.id,
+        );
+
+        await request(app.getHttpServer())
+          .patch(`/api/developer/webhook-endpoints/${created.body.id}`)
+          .set('Cookie', sessionCookie(WALLET_A))
+          .send({ description: 'updated by e2e' })
+          .expect(200);
+
+        const rotated = await request(app.getHttpServer())
+          .post(
+            `/api/developer/webhook-endpoints/${created.body.id}/rotate-secret`,
+          )
+          .set('Cookie', sessionCookie(WALLET_A))
+          .expect(200);
+        const signingSecret = rotated.body.signing_secret as string;
         expect(signingSecret).toMatch(/^[0-9a-f]{64}$/);
 
         await request(app.getHttpServer())
@@ -268,6 +332,18 @@ describe('HyperTone Payments API (e2e)', () => {
         ).toBe(true);
         expect(received[0].headers['hypertron-event-id']).toBeDefined();
         expect(received[0].headers['hypertron-delivery-id']).toBeDefined();
+
+        await request(app.getHttpServer())
+          .get(
+            `/api/developer/webhook-endpoints/${created.body.id}/deliveries`,
+          )
+          .set('Cookie', sessionCookie(WALLET_A))
+          .expect(200);
+
+        await request(app.getHttpServer())
+          .delete(`/api/developer/webhook-endpoints/${created.body.id}`)
+          .set('Cookie', sessionCookie(WALLET_A))
+          .expect(200);
       } finally {
         await new Promise<void>((resolve, reject) =>
           receiver.close((err) => (err ? reject(err) : resolve())),
