@@ -25,6 +25,8 @@ import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { WEBHOOK_QUEUE } from '@/modules/webhooks/webhooks.constants';
 import { generateTestSessionCookie } from '@/common/guards/session.guard';
 import { DASHBOARD_SESSION_COOKIE } from '@/common/auth/dashboard-session';
+import { HypertronThrottlerGuard } from '@/common/guards/hypertron-throttler.guard';
+import { passThroughThrottlerGuard } from '../helpers/passthrough-throttler';
 
 const AUTH_SECRET = 'test-auth-secret-for-integration';
 const ENCRYPTION_KEY = 'd'.repeat(64);
@@ -202,6 +204,8 @@ describe('/api/developer/webhook-endpoints (integration)', () => {
       .useValue(prisma)
       .overrideProvider(getQueueToken(WEBHOOK_QUEUE))
       .useValue(queue)
+      .overrideGuard(HypertronThrottlerGuard)
+      .useValue(passThroughThrottlerGuard)
       .compile();
 
     app = moduleRef.createNestApplication();

@@ -63,4 +63,10 @@ export const configValidationSchema = Joi.object({
     .default(60),
   RATE_LIMIT_READ_PER_MIN: Joi.number().integer().min(1).default(300),
   RATE_LIMIT_DASHBOARD_PER_MIN: Joi.number().integer().min(1).default(120),
+  THROTTLE_STORAGE: Joi.string().valid('redis', 'memory').default('redis'),
+
+  // ── OpenTelemetry (optional) ──────────────────────────────────────────────
+  OTEL_SDK_DISABLED: Joi.boolean().truthy('true').falsy('false').default(false),
+  OTEL_SERVICE_NAME: Joi.string().default('hypertron-api'),
+  OTEL_EXPORTER_OTLP_ENDPOINT: Joi.string().uri().allow('').optional(),
 });

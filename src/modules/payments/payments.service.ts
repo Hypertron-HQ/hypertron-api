@@ -16,7 +16,7 @@
  *  11. Return 201 with payment
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import type { Payment } from '@prisma/client';
@@ -25,6 +25,7 @@ import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { IdempotencyService } from '@/modules/idempotency/idempotency.service';
 import { CustomersRepository } from '@/modules/customers/customers.repository';
 import { EventsService } from '@/modules/events/events.service';
+import { MetricsService } from '@/observability/metrics.service';
 import { PaymentStateMachine } from './payment-state-machine';
 import { PaymentsRepository, decodeCursor } from './payments.repository';
 import { ResourceNotFoundException } from '@/common/exceptions/hypertron.exception';
@@ -55,6 +56,7 @@ export class PaymentsService {
     private readonly events: EventsService,
     private readonly stateMachine: PaymentStateMachine,
     private readonly config: ConfigService,
+    @Optional() private readonly metrics?: MetricsService,
   ) {}
 
   // ─── POST /v1/payments ──────────────────────────────────────────────────────
@@ -164,6 +166,11 @@ export class PaymentsService {
       this.logger.log(
         { paymentId: paymentPublicId, businessId: merchant.businessId },
         'Payment created successfully',
+      );
+
+      this.metrics?.recordPaymentCreated(
+        merchant.environment,
+        dto.currency,
       );
 
       return { payment: responseDto, fromCache: false };

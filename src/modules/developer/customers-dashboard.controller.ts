@@ -20,6 +20,7 @@ import {
 
 import { SessionGuard } from '@/common/guards/session.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
+import { HypertronThrottlerGuard } from '@/common/guards/hypertron-throttler.guard';
 import {
   CurrentUser,
   type SessionUser,
@@ -27,14 +28,20 @@ import {
 import { CustomersService } from '@/modules/customers/customers.service';
 import { ListCustomersDto } from '@/modules/customers/dto/list-customers.dto';
 import {
+  CustomerListResponseDto,
+  CustomerResponseDto,
   toCustomerResponse,
   toCustomerListResponse,
 } from '@/modules/customers/dto/customer-response.dto';
+import { HypertronErrorResponseDto } from '@/common/dto/hypertron-error.dto';
+import { SkipThrottle } from '@nestjs/throttler';
 
 @ApiTags('Developer')
 @ApiBearerAuth('SessionCookie')
 @Controller('api/developer/customers')
-@UseGuards(SessionGuard, RolesGuard)
+@UseGuards(SessionGuard, RolesGuard, HypertronThrottlerGuard)
+@SkipThrottle({ 'payment-create': true, read: true })
+@ApiResponse({ status: 401, description: 'Missing or invalid session', type: HypertronErrorResponseDto })
 export class DeveloperCustomersController {
   constructor(private readonly customersService: CustomersService) {}
 
@@ -42,11 +49,11 @@ export class DeveloperCustomersController {
 
   @Get()
   @ApiOperation({ summary: 'List customers (dashboard)' })
-  @ApiResponse({ status: 200, description: 'Paginated list of customers' })
+  @ApiResponse({ status: 200, description: 'Paginated list of customers', type: CustomerListResponseDto })
   async findAll(
     @Query() query: ListCustomersDto,
     @CurrentUser() user: SessionUser,
-  ) {
+  ): Promise<CustomerListResponseDto> {
     const page = await this.customersService.findAll(query, user.businessId);
     return toCustomerListResponse(page.data, page.hasMore, page.nextCursor);
   }
@@ -56,12 +63,12 @@ export class DeveloperCustomersController {
   @Get(':id')
   @ApiOperation({ summary: 'Retrieve a customer (dashboard)' })
   @ApiParam({ name: 'id', description: 'Customer publicId (cus_...)' })
-  @ApiResponse({ status: 200, description: 'Customer object' })
-  @ApiResponse({ status: 404, description: 'Customer not found' })
+  @ApiResponse({ status: 200, description: 'Customer object', type: CustomerResponseDto })
+  @ApiResponse({ status: 404, description: 'Customer not found', type: HypertronErrorResponseDto })
   async findOne(
     @Param('id') id: string,
     @CurrentUser() user: SessionUser,
-  ) {
+  ): Promise<CustomerResponseDto> {
     const customer = await this.customersService.findOne(id, user.businessId);
     return toCustomerResponse(customer);
   }
