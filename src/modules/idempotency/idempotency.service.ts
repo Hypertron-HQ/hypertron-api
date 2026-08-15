@@ -99,7 +99,10 @@ export class IdempotencyService {
       );
     }
 
-    this.logger.log({ key, businessId }, 'Idempotency cache hit — returning stored response');
+    this.logger.log(
+      { key, businessId },
+      'Idempotency cache hit — returning stored response',
+    );
     return { found: true, cachedResponse: record.responseBody };
   }
 

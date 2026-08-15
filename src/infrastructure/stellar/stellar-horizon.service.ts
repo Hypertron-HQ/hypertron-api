@@ -66,7 +66,7 @@ export class StellarHorizonService {
       const records: HorizonPaymentRecord[] = [];
 
       for (const op of page.records) {
-        if (op.type !== 'payment') continue;
+        if ((op.type as string) !== 'payment') continue;
 
         const payment = op as Horizon.ServerApi.PaymentOperationRecord & {
           transaction_attr?: {
@@ -223,7 +223,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
       },
       (e) => {
         clearTimeout(timer);
-        reject(e);
+        reject(e instanceof Error ? e : new Error(String(e)));
       },
     );
   });

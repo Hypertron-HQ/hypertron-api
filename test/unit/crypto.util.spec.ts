@@ -27,7 +27,9 @@ describe('generateApiKey()', () => {
   });
 
   it('generates unique keys on successive calls', () => {
-    const keys = new Set(Array.from({ length: 50 }, () => generateApiKey('test')));
+    const keys = new Set(
+      Array.from({ length: 50 }, () => generateApiKey('test')),
+    );
     expect(keys.size).toBe(50);
   });
 
@@ -121,7 +123,9 @@ describe('generateSigningSecret()', () => {
   });
 
   it('generates unique secrets', () => {
-    const secrets = new Set(Array.from({ length: 50 }, () => generateSigningSecret()));
+    const secrets = new Set(
+      Array.from({ length: 50 }, () => generateSigningSecret()),
+    );
     expect(secrets.size).toBe(50);
   });
 });
@@ -270,19 +274,25 @@ describe('verifyWebhookSignature()', () => {
   it('returns false for a tampered body', () => {
     const timestamp = Math.floor(Date.now() / 1000);
     const header = signWebhookPayload(secret, timestamp, body);
-    expect(verifyWebhookSignature(header, secret, body + 'tampered')).toBe(false);
+    expect(verifyWebhookSignature(header, secret, body + 'tampered')).toBe(
+      false,
+    );
   });
 
   it('returns false for the wrong secret', () => {
     const timestamp = Math.floor(Date.now() / 1000);
     const header = signWebhookPayload(secret, timestamp, body);
-    expect(verifyWebhookSignature(header, generateSigningSecret(), body)).toBe(false);
+    expect(verifyWebhookSignature(header, generateSigningSecret(), body)).toBe(
+      false,
+    );
   });
 
   it('returns false for a timestamp outside the tolerance window', () => {
     const oldTimestamp = Math.floor(Date.now() / 1000) - 600; // 10 minutes ago
     const header = signWebhookPayload(secret, oldTimestamp, body);
-    expect(verifyWebhookSignature(header, secret, body, 5 * 60 * 1000)).toBe(false);
+    expect(verifyWebhookSignature(header, secret, body, 5 * 60 * 1000)).toBe(
+      false,
+    );
   });
 
   it('returns true for a timestamp within the tolerance window', () => {

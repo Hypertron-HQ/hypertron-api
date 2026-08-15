@@ -42,8 +42,8 @@ async function bootstrap(): Promise<void> {
       allowedOrigins.length > 0
         ? allowedOrigins
         : appConfig.nodeEnv === 'production'
-          ? false           // block all cross-origin in prod if not configured
-          : true,           // allow all in local dev
+          ? false // block all cross-origin in prod if not configured
+          : true, // allow all in local dev
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
       'Content-Type',
@@ -64,9 +64,9 @@ async function bootstrap(): Promise<void> {
   // ── Global validation pipe ─────────────────────────────────────────────────
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true,              // strip undeclared properties
-      forbidNonWhitelisted: true,   // throw 400 for unknown properties
-      transform: true,              // coerce query param types
+      whitelist: true, // strip undeclared properties
+      forbidNonWhitelisted: true, // throw 400 for unknown properties
+      transform: true, // coerce query param types
       transformOptions: {
         enableImplicitConversion: false,
       },

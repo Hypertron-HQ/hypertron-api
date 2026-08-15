@@ -26,6 +26,7 @@ if (!existsSync(STATE_PATH)) {
     process.env.DATABASE_URL = state.databaseUrl!;
     process.env.REDIS_URL = state.redisUrl!;
     process.env.AUTH_SECRET = state.authSecret!;
+    process.env.INTERNAL_SERVICE_TOKEN = 'e2e-internal-service-token-change-me';
     process.env.WEBHOOK_SECRET_ENCRYPTION_KEY = state.encryptionKey!;
     process.env.THROTTLE_STORAGE = 'memory';
     process.env.DISABLE_WORKERS = 'true';

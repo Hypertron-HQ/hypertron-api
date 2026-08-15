@@ -14,7 +14,7 @@ import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { INestApplication } from '@nestjs/common';
 import type { PrismaClient } from '@prisma/client';
-import * as request from 'supertest';
+import request from 'supertest';
 
 import { verifyWebhookSignature } from '@/common/utils/crypto.util';
 import {
@@ -187,7 +187,9 @@ describe('HyperTone Payments API (e2e)', () => {
 
   describe('rate limits', () => {
     it('returns 429 after payment-create budget is exhausted', async () => {
-      const limit = Number(process.env.RATE_LIMIT_PAYMENT_CREATE_PER_MIN ?? '5');
+      const limit = Number(
+        process.env.RATE_LIMIT_PAYMENT_CREATE_PER_MIN ?? '5',
+      );
 
       for (let i = 0; i < limit; i++) {
         await request(app.getHttpServer())
@@ -232,7 +234,9 @@ describe('HyperTone Payments API (e2e)', () => {
         });
       });
 
-      await new Promise<void>((resolve) => receiver.listen(0, '127.0.0.1', resolve));
+      await new Promise<void>((resolve) =>
+        receiver.listen(0, '127.0.0.1', resolve),
+      );
       const port = (receiver.address() as AddressInfo).port;
       const webhookUrl = `http://127.0.0.1:${port}/hook`;
 
@@ -260,11 +264,7 @@ describe('HyperTone Payments API (e2e)', () => {
         const sig = received[0].headers['hypertron-signature'];
         expect(typeof sig).toBe('string');
         expect(
-          verifyWebhookSignature(
-            String(sig),
-            signingSecret,
-            received[0].body,
-          ),
+          verifyWebhookSignature(String(sig), signingSecret, received[0].body),
         ).toBe(true);
         expect(received[0].headers['hypertron-event-id']).toBeDefined();
         expect(received[0].headers['hypertron-delivery-id']).toBeDefined();

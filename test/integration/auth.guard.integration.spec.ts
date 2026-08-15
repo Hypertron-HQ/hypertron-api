@@ -18,7 +18,7 @@
 import { Controller, Get, Module, UseGuards } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import * as request from 'supertest';
+import request from 'supertest';
 import type { INestApplication } from '@nestjs/common';
 
 import { ApiKeyGuard } from '@/common/guards/api-key.guard';
@@ -64,7 +64,7 @@ class MockPrismaService {
       );
     },
     create: async (args: { data: Omit<ApiKey, 'id'> }) => {
-      const created = { id: `gen_${Date.now()}`, ...args.data } as ApiKey;
+      const created = { id: `gen_${Date.now()}`, ...args.data };
       this.keys.push(created);
       return created;
     },
@@ -187,9 +187,7 @@ describe('ApiKeyGuard (integration)', () => {
   // ─── Auth failures ──────────────────────────────────────────────────────────
 
   it('401 — missing Authorization header', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/test/me')
-      .expect(401);
+    const res = await request(app.getHttpServer()).get('/test/me').expect(401);
 
     expect(res.body.error.type).toBe('authentication_error');
     expect(res.body.error.code).toBe('missing_api_key');
@@ -207,7 +205,10 @@ describe('ApiKeyGuard (integration)', () => {
   it('401 — unknown key (not in store)', async () => {
     const res = await request(app.getHttpServer())
       .get('/test/me')
-      .set('Authorization', 'Bearer sk_test_totallyFakeKeyThatDoesNotExistXXXXX')
+      .set(
+        'Authorization',
+        'Bearer sk_test_totallyFakeKeyThatDoesNotExistXXXXX',
+      )
       .expect(401);
 
     expect(res.body.error.type).toBe('authentication_error');
@@ -229,9 +230,7 @@ describe('ApiKeyGuard (integration)', () => {
   // ─── Error response shape ───────────────────────────────────────────────────
 
   it('error response is wrapped in { error: { type, code, message } }', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/test/me')
-      .expect(401);
+    const res = await request(app.getHttpServer()).get('/test/me').expect(401);
 
     expect(res.body).toHaveProperty('error');
     expect(res.body.error).toHaveProperty('type', 'authentication_error');

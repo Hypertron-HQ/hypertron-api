@@ -13,10 +13,9 @@
  *   - Cross-merchant isolation enforced
  */
 
-import { Module, Controller, UseGuards } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import * as request from 'supertest';
+import request from 'supertest';
 import type { INestApplication } from '@nestjs/common';
 import { ValidationPipe } from '@nestjs/common';
 import type { Customer, ApiKey } from '@prisma/client';
@@ -28,7 +27,6 @@ import { passThroughThrottlerGuard } from '../helpers/passthrough-throttler';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { CustomersModule } from '@/modules/customers/customers.module';
 import { DeveloperModule } from '@/modules/developer/developer.module';
-import { AuthModule } from '@/modules/auth/auth.module';
 import { generateApiKey, hashApiKey } from '@/common/utils/crypto.util';
 import { generateTestSessionCookie } from '@/common/guards/session.guard';
 import { DASHBOARD_SESSION_COOKIE } from '@/common/auth/dashboard-session';
@@ -38,63 +36,83 @@ import { DASHBOARD_SESSION_COOKIE } from '@/common/auth/dashboard-session';
 class MockPrismaService {
   customers: Customer[] = [];
   apiKeys: ApiKey[] = [];
-  businesses: { id: string; walletAddress: string }[] = [
-    { id: 'biz_cust_test_A', walletAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF' },
-    { id: 'biz_cust_test_B', walletAddress: 'GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBWHF' },
+  merchantSettingsRows: { businessId: string; walletAddress: string }[] = [
+    {
+      businessId: 'biz_cust_test_A',
+      walletAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+    },
+    {
+      businessId: 'biz_cust_test_B',
+      walletAddress: 'GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBWHF',
+    },
   ];
 
   private seq = 0;
-  id() { return `oid_${++this.seq}`; }
+  id() {
+    return `oid_${++this.seq}`;
+  }
 
   readonly customer = {
-    findFirst: jest.fn(async ({ where }: { where: Record<string, unknown> }) =>
-      this.customers.find((c) =>
-        Object.entries(where).every(([k, v]) => (c as Record<string, unknown>)[k] === v),
-      ) ?? null,
+    findFirst: jest.fn(
+      async ({ where }: { where: Record<string, unknown> }) =>
+        this.customers.find((c) =>
+          Object.entries(where).every(
+            ([k, v]) => (c as Record<string, unknown>)[k] === v,
+          ),
+        ) ?? null,
     ),
-    findMany: jest.fn(async ({ where, take }: {
-      where?: Record<string, unknown> & { OR?: Array<Record<string, unknown>> };
-      take?: number;
-      orderBy?: object[];
-    }) => {
-      let rows = this.customers.filter((c) => {
-        if (!where) return true;
-        if (where.businessId && c.businessId !== where.businessId) return false;
-        if (where.OR?.length) {
-          return where.OR.some((clause) => {
-            const createdAt = clause.createdAt as Date | { lt?: Date } | undefined;
-            if (
-              createdAt &&
-              typeof createdAt === 'object' &&
-              !(createdAt instanceof Date) &&
-              createdAt.lt
-            ) {
-              return c.createdAt.getTime() < createdAt.lt.getTime();
-            }
-            if (createdAt instanceof Date && typeof clause.id === 'object') {
-              const idClause = clause.id as { lt?: string };
-              return (
-                c.createdAt.getTime() === createdAt.getTime() &&
-                !!idClause.lt &&
-                c.id < idClause.lt
-              );
-            }
+    findMany: jest.fn(
+      async ({
+        where,
+        take,
+      }: {
+        where?: Record<string, unknown> & {
+          OR?: Array<Record<string, unknown>>;
+        };
+        take?: number;
+        orderBy?: object[];
+      }) => {
+        let rows = this.customers.filter((c) => {
+          if (!where) return true;
+          if (where.businessId && c.businessId !== where.businessId)
             return false;
+          if (where.OR?.length) {
+            return where.OR.some((clause) => {
+              const createdAt = clause.createdAt as
+                Date | { lt?: Date } | undefined;
+              if (
+                createdAt &&
+                typeof createdAt === 'object' &&
+                !(createdAt instanceof Date) &&
+                createdAt.lt
+              ) {
+                return c.createdAt.getTime() < createdAt.lt.getTime();
+              }
+              if (createdAt instanceof Date && typeof clause.id === 'object') {
+                const idClause = clause.id as { lt?: string };
+                return (
+                  c.createdAt.getTime() === createdAt.getTime() &&
+                  !!idClause.lt &&
+                  c.id < idClause.lt
+                );
+              }
+              return false;
+            });
+          }
+          return Object.entries(where).every(([k, v]) => {
+            if (k === 'OR') return true;
+            return (c as Record<string, unknown>)[k] === v;
           });
-        }
-        return Object.entries(where).every(([k, v]) => {
-          if (k === 'OR') return true;
-          return (c as Record<string, unknown>)[k] === v;
         });
-      });
-      rows = rows.slice().sort((a, b) => {
-        const byTime = b.createdAt.getTime() - a.createdAt.getTime();
-        if (byTime !== 0) return byTime;
-        return b.id < a.id ? -1 : b.id > a.id ? 1 : 0;
-      });
-      if (take) rows = rows.slice(0, take);
-      return rows;
-    }),
+        rows = rows.slice().sort((a, b) => {
+          const byTime = b.createdAt.getTime() - a.createdAt.getTime();
+          if (byTime !== 0) return byTime;
+          return b.id < a.id ? -1 : b.id > a.id ? 1 : 0;
+        });
+        if (take) rows = rows.slice(0, take);
+        return rows;
+      },
+    ),
     create: jest.fn(async ({ data }: { data: Partial<Customer> }) => {
       const c: Customer = {
         id: this.id(),
@@ -117,39 +135,70 @@ class MockPrismaService {
   readonly apiKey = {
     findMany: jest.fn(async ({ where }: { where: Record<string, unknown> }) =>
       this.apiKeys.filter((k) =>
-        Object.entries(where).every(([f, v]) => (k as Record<string, unknown>)[f] === v),
+        Object.entries(where).every(
+          ([f, v]) => (k as Record<string, unknown>)[f] === v,
+        ),
       ),
     ),
-    findFirst: jest.fn(async ({ where }: { where: Record<string, unknown> }) =>
-      this.apiKeys.find((k) =>
-        Object.entries(where).every(([f, v]) => (k as Record<string, unknown>)[f] === v),
-      ) ?? null,
+    findFirst: jest.fn(
+      async ({ where }: { where: Record<string, unknown> }) =>
+        this.apiKeys.find((k) =>
+          Object.entries(where).every(
+            ([f, v]) => (k as Record<string, unknown>)[f] === v,
+          ),
+        ) ?? null,
     ),
-    update: jest.fn(async ({ where, data }: { where: { id: string }; data: Partial<ApiKey> }) => {
-      const k = this.apiKeys.find((x) => x.id === where.id);
-      if (k) Object.assign(k, data);
-      return k!;
-    }),
+    update: jest.fn(
+      async ({
+        where,
+        data,
+      }: {
+        where: { id: string };
+        data: Partial<ApiKey>;
+      }) => {
+        const k = this.apiKeys.find((x) => x.id === where.id);
+        if (k) Object.assign(k, data);
+        return k!;
+      },
+    ),
     create: jest.fn(async ({ data }: { data: Partial<ApiKey> }) => {
-      const k = { id: this.id(), createdAt: new Date(), lastUsedAt: null, revokedAt: null, active: true, ...data } as ApiKey;
+      const k = {
+        id: this.id(),
+        createdAt: new Date(),
+        lastUsedAt: null,
+        revokedAt: null,
+        active: true,
+        ...data,
+      } as ApiKey;
       this.apiKeys.push(k);
       return k;
     }),
   };
 
-  readonly business = {
-    findUnique: jest.fn(async ({ where }: { where: { walletAddress?: string; id?: string }; select?: { id?: boolean } }) => {
-      const row = this.businesses.find((b) =>
-        where.walletAddress ? b.walletAddress === where.walletAddress : b.id === where.id,
-      );
-      if (!row) return null;
-      return { id: row.id };
-    }),
+  readonly merchantSettings = {
+    findUnique: jest.fn(
+      async ({
+        where,
+      }: {
+        where: { walletAddress?: string; businessId?: string };
+        select?: { businessId?: boolean };
+      }) => {
+        const row = this.merchantSettingsRows.find((b) =>
+          where.walletAddress
+            ? b.walletAddress === where.walletAddress
+            : b.businessId === where.businessId,
+        );
+        if (!row) return null;
+        return { businessId: row.businessId };
+      },
+    ),
   };
 
   async $connect() {}
   async $disconnect() {}
-  async $transaction(ops: Promise<unknown>[]) { return Promise.all(ops); }
+  async $transaction(ops: Promise<unknown>[]) {
+    return Promise.all(ops);
+  }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -177,7 +226,11 @@ async function seedApiKey(prisma: MockPrismaService, biz = BIZ_A) {
   return rawKey;
 }
 
-function seedCustomer(prisma: MockPrismaService, biz = BIZ_A, overrides: Partial<Customer> = {}): Customer {
+function seedCustomer(
+  prisma: MockPrismaService,
+  biz = BIZ_A,
+  overrides: Partial<Customer> = {},
+): Customer {
   const c: Customer = {
     id: prisma.id(),
     publicId: `cus_${prisma.id()}`,
@@ -206,7 +259,6 @@ const ownerSession = (biz = BIZ_A): { Cookie: string } => {
   const token = generateTestSessionCookie(wallet, AUTH_SECRET);
   return { Cookie: `${DASHBOARD_SESSION_COOKIE}=${token}` };
 };
-
 
 // ─── Test setup ───────────────────────────────────────────────────────────────
 
@@ -249,7 +301,9 @@ describe('Customer API (integration)', () => {
     await app.init();
   });
 
-  afterEach(async () => { if (app) await app.close(); });
+  afterEach(async () => {
+    if (app) await app.close();
+  });
 
   const apiAuth = () => ({ Authorization: `Bearer ${rawKey}` });
 
@@ -270,7 +324,10 @@ describe('Customer API (integration)', () => {
     });
 
     it('200 — each customer has correct shape', async () => {
-      seedCustomer(prisma, BIZ_A, { email: 'alice@example.com', name: 'Alice' });
+      seedCustomer(prisma, BIZ_A, {
+        email: 'alice@example.com',
+        name: 'Alice',
+      });
 
       const res = await request(app.getHttpServer())
         .get('/v1/customers')
@@ -324,7 +381,9 @@ describe('Customer API (integration)', () => {
       expect(page1.body.next_cursor).toEqual(expect.any(String));
 
       const page2 = await request(app.getHttpServer())
-        .get(`/v1/customers?limit=2&cursor=${encodeURIComponent(page1.body.next_cursor)}`)
+        .get(
+          `/v1/customers?limit=2&cursor=${encodeURIComponent(page1.body.next_cursor)}`,
+        )
         .set(apiAuth())
         .expect(200);
 

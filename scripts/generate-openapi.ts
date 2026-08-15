@@ -18,6 +18,8 @@ process.env.DATABASE_URL =
 process.env.REDIS_URL = process.env.REDIS_URL ?? 'redis://127.0.0.1:6379';
 process.env.AUTH_SECRET =
   process.env.AUTH_SECRET ?? 'openapi-gen-auth-secret-32chars!!';
+process.env.INTERNAL_SERVICE_TOKEN =
+  process.env.INTERNAL_SERVICE_TOKEN ?? 'openapi-gen-internal-token-32!!';
 process.env.WEBHOOK_SECRET_ENCRYPTION_KEY =
   process.env.WEBHOOK_SECRET_ENCRYPTION_KEY ?? '0'.repeat(64);
 

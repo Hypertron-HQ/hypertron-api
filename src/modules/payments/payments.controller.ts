@@ -52,8 +52,16 @@ import {
 @Controller('v1/payments')
 @UseGuards(ApiKeyGuard, HypertronThrottlerGuard)
 @SkipThrottle({ dashboard: true })
-@ApiResponse({ status: 401, description: 'Invalid or missing API key', type: HypertronErrorResponseDto })
-@ApiResponse({ status: 429, description: 'Rate limit exceeded', type: HypertronErrorResponseDto })
+@ApiResponse({
+  status: 401,
+  description: 'Invalid or missing API key',
+  type: HypertronErrorResponseDto,
+})
+@ApiResponse({
+  status: 429,
+  description: 'Rate limit exceeded',
+  type: HypertronErrorResponseDto,
+})
 export class PaymentsController {
   constructor(
     private readonly paymentsService: PaymentsService,
@@ -78,8 +86,16 @@ export class PaymentsController {
     description: 'Optional client correlation id (echoed on the response)',
     required: false,
   })
-  @ApiResponse({ status: 201, description: 'Payment created', type: PaymentResponseDto })
-  @ApiResponse({ status: 400, description: 'Validation error', type: HypertronErrorResponseDto })
+  @ApiResponse({
+    status: 201,
+    description: 'Payment created',
+    type: PaymentResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation error',
+    type: HypertronErrorResponseDto,
+  })
   @ApiResponse({
     status: 409,
     description: 'Idempotency key reused with a different body',
@@ -99,9 +115,14 @@ export class PaymentsController {
   @SkipThrottle({ 'payment-create': true })
   @ApiOperation({
     summary: 'List payments',
-    description: 'Cursor-paginated list of payments for the authenticated merchant/environment.',
+    description:
+      'Cursor-paginated list of payments for the authenticated merchant/environment.',
   })
-  @ApiResponse({ status: 200, description: 'Paginated list', type: PaymentListResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated list',
+    type: PaymentListResponseDto,
+  })
   async findAll(
     @Query() query: ListPaymentsDto,
     @CurrentMerchant() merchant: MerchantContext,
@@ -114,8 +135,16 @@ export class PaymentsController {
   @SkipThrottle({ 'payment-create': true })
   @ApiOperation({ summary: 'Retrieve a payment' })
   @ApiParam({ name: 'id', description: 'Payment publicId (pay_...)' })
-  @ApiResponse({ status: 200, description: 'Payment object', type: PaymentResponseDto })
-  @ApiResponse({ status: 404, description: 'Payment not found', type: HypertronErrorResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Payment object',
+    type: PaymentResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Payment not found',
+    type: HypertronErrorResponseDto,
+  })
   async findOne(
     @Param('id') id: string,
     @CurrentMerchant() merchant: MerchantContext,
@@ -131,8 +160,16 @@ export class PaymentsController {
     description: 'Cancels a payment in created or pending status.',
   })
   @ApiParam({ name: 'id', description: 'Payment publicId (pay_...)' })
-  @ApiResponse({ status: 200, description: 'Canceled payment', type: PaymentResponseDto })
-  @ApiResponse({ status: 404, description: 'Payment not found', type: HypertronErrorResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Canceled payment',
+    type: PaymentResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Payment not found',
+    type: HypertronErrorResponseDto,
+  })
   @ApiResponse({
     status: 409,
     description: 'Invalid state transition',
@@ -154,7 +191,11 @@ export class PaymentsController {
     description: 'Immutable payment event log',
     type: PaymentEventListResponseDto,
   })
-  @ApiResponse({ status: 404, description: 'Payment not found', type: HypertronErrorResponseDto })
+  @ApiResponse({
+    status: 404,
+    description: 'Payment not found',
+    type: HypertronErrorResponseDto,
+  })
   async findEvents(
     @Param('id') id: string,
     @CurrentMerchant() merchant: MerchantContext,

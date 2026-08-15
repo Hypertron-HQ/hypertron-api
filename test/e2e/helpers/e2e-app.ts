@@ -16,10 +16,7 @@ import { ThrottlerExceptionFilter } from '@/common/filters/throttler-exception.f
 import { RequestIdInterceptor } from '@/common/interceptors/request-id.interceptor';
 import { generateTestSessionCookie } from '@/common/guards/session.guard';
 import { DASHBOARD_SESSION_COOKIE } from '@/common/auth/dashboard-session';
-import {
-  generateApiKey,
-  hashApiKey,
-} from '@/common/utils/crypto.util';
+import { generateApiKey, hashApiKey } from '@/common/utils/crypto.util';
 import { generateId, PREFIXES } from '@/common/utils/id-generator';
 
 export const E2E_AUTH_SECRET =
@@ -86,20 +83,19 @@ export async function resetE2eDb(prisma: PrismaClient): Promise<void> {
   await prisma.idempotencyRecord.deleteMany();
   await prisma.customer.deleteMany();
   await prisma.apiKey.deleteMany();
-  await prisma.paymentLink.deleteMany();
-  await prisma.business.deleteMany();
+  await prisma.checkoutLink.deleteMany();
+  await prisma.merchantSettings.deleteMany();
 }
 
 export async function seedBusiness(
   prisma: PrismaClient,
   opts: { id: string; walletAddress: string; receiveAddress?: string },
 ) {
-  return prisma.business.create({
+  return prisma.merchantSettings.create({
     data: {
-      id: opts.id,
+      businessId: opts.id,
       walletAddress: opts.walletAddress,
       receiveAddress: opts.receiveAddress ?? DEST_A,
-      name: `Biz ${opts.id}`,
     },
   });
 }

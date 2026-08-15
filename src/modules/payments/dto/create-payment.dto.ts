@@ -37,14 +37,15 @@ class IsPaymentAmountConstraint implements ValidatorConstraintInterface {
 export enum PaymentCurrencyDto {
   USDC = 'USDC',
   EURC = 'EURC',
-  XLM  = 'XLM',
+  XLM = 'XLM',
 }
 
 // ─── DTO ──────────────────────────────────────────────────────────────────────
 
 export class CreatePaymentDto {
   @ApiProperty({
-    description: 'Payment amount as a positive decimal string (no scientific notation)',
+    description:
+      'Payment amount as a positive decimal string (no scientific notation)',
     example: '10.50',
   })
   @IsString()
@@ -71,7 +72,8 @@ export class CreatePaymentDto {
   description?: string;
 
   @ApiPropertyOptional({
-    description: 'Customer email — used to upsert the merchant-scoped customer record',
+    description:
+      'Customer email — used to upsert the merchant-scoped customer record',
     example: 'alice@example.com',
   })
   @IsOptional()

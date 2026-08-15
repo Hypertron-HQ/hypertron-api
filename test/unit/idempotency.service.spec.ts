@@ -117,7 +117,9 @@ describe('IdempotencyService', () => {
         responseStatus: 201,
         responseBody: {},
       });
-      await expect(service.check(BASE_PARAMS)).rejects.toThrow(IdempotencyException);
+      await expect(service.check(BASE_PARAMS)).rejects.toThrow(
+        IdempotencyException,
+      );
       await expect(service.check(BASE_PARAMS)).rejects.toMatchObject({
         payload: { code: 'idempotency_key_reused' },
       });
@@ -129,7 +131,9 @@ describe('IdempotencyService', () => {
         responseStatus: 0, // in-flight sentinel
         responseBody: {},
       });
-      await expect(service.check(BASE_PARAMS)).rejects.toThrow(IdempotencyException);
+      await expect(service.check(BASE_PARAMS)).rejects.toThrow(
+        IdempotencyException,
+      );
       await expect(service.check(BASE_PARAMS)).rejects.toMatchObject({
         payload: { code: 'idempotency_key_in_flight' },
       });
@@ -152,7 +156,9 @@ describe('IdempotencyService', () => {
     it('throws idempotency_key_in_flight on P2002 duplicate key error', async () => {
       await build(null);
       prisma.idempotencyRecord.create.mockRejectedValue({ code: 'P2002' });
-      await expect(service.reserve(BASE_PARAMS)).rejects.toThrow(IdempotencyException);
+      await expect(service.reserve(BASE_PARAMS)).rejects.toThrow(
+        IdempotencyException,
+      );
       await expect(service.reserve(BASE_PARAMS)).rejects.toMatchObject({
         payload: { code: 'idempotency_key_in_flight' },
       });
@@ -160,8 +166,12 @@ describe('IdempotencyService', () => {
 
     it('re-throws non-duplicate errors', async () => {
       await build(null);
-      prisma.idempotencyRecord.create.mockRejectedValue(new Error('DB connection failed'));
-      await expect(service.reserve(BASE_PARAMS)).rejects.toThrow('DB connection failed');
+      prisma.idempotencyRecord.create.mockRejectedValue(
+        new Error('DB connection failed'),
+      );
+      await expect(service.reserve(BASE_PARAMS)).rejects.toThrow(
+        'DB connection failed',
+      );
     });
   });
 
@@ -171,10 +181,17 @@ describe('IdempotencyService', () => {
     it('calls updateMany with responseStatus and responseBody', async () => {
       await build(null);
       const body = { id: 'pay_1' };
-      await service.complete({ ...BASE_PARAMS, responseStatus: 201, responseBody: body });
+      await service.complete({
+        ...BASE_PARAMS,
+        responseStatus: 201,
+        responseBody: body,
+      });
       expect(prisma.idempotencyRecord.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ responseStatus: 201, responseBody: body }),
+          data: expect.objectContaining({
+            responseStatus: 201,
+            responseBody: body,
+          }),
         }),
       );
     });
@@ -190,9 +207,18 @@ describe('IdempotencyService', () => {
 
     it('throws InvalidRequestException for undefined', async () => {
       await build(null);
-      expect(() => service.validateKey(undefined)).toThrow(InvalidRequestException);
       expect(() => service.validateKey(undefined)).toThrow(
-        expect.objectContaining({ payload: { code: 'missing_idempotency_key', type: 'invalid_request_error', message: expect.any(String), param: 'Idempotency-Key' } }),
+        InvalidRequestException,
+      );
+      expect(() => service.validateKey(undefined)).toThrow(
+        expect.objectContaining({
+          payload: {
+            code: 'missing_idempotency_key',
+            type: 'invalid_request_error',
+            message: expect.any(String),
+            param: 'Idempotency-Key',
+          },
+        }),
       );
     });
 
@@ -203,7 +229,9 @@ describe('IdempotencyService', () => {
 
     it('throws InvalidRequestException for key longer than 255 chars', async () => {
       await build(null);
-      expect(() => service.validateKey('a'.repeat(256))).toThrow(InvalidRequestException);
+      expect(() => service.validateKey('a'.repeat(256))).toThrow(
+        InvalidRequestException,
+      );
     });
 
     it('accepts key of exactly 255 chars', async () => {

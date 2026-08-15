@@ -2,7 +2,7 @@
  * SessionGuard — authenticates /api/developer/* via Freighter ht_dashboard cookie.
  *
  * Cookie is HMAC-signed with AUTH_SECRET (shared with hypertron-core-backend).
- * Resolves walletAddress → Business.id and attaches SessionUser to the request.
+ * Resolves walletAddress → MerchantSettings.businessId (pushed from core).
  */
 
 import {
@@ -54,7 +54,9 @@ export class SessionGuard implements CanActivate {
     const hasDashboardCookie = Boolean(
       cookieHeader
         ?.split(';')
-        .some((entry) => entry.trim().startsWith(`${DASHBOARD_SESSION_COOKIE}=`)),
+        .some((entry) =>
+          entry.trim().startsWith(`${DASHBOARD_SESSION_COOKIE}=`),
+        ),
     );
 
     const walletAddress = parseDashboardWalletFromCookieHeader(
@@ -71,13 +73,16 @@ export class SessionGuard implements CanActivate {
       );
     }
 
-    const business = await this.prisma.business.findUnique({
+    const settings = await this.prisma.merchantSettings.findUnique({
       where: { walletAddress },
-      select: { id: true },
+      select: { businessId: true },
     });
 
-    if (!business) {
-      this.logger.warn({ walletAddress }, 'No Business for wallet session');
+    if (!settings) {
+      this.logger.warn(
+        { walletAddress },
+        'No MerchantSettings for wallet session',
+      );
       throw new AuthenticationException(
         'invalid_session_token',
         'No merchant workspace for this wallet. Complete Freighter sign-in on the core app first.',
@@ -86,7 +91,7 @@ export class SessionGuard implements CanActivate {
 
     request[SESSION_USER_KEY] = {
       walletAddress,
-      businessId: business.id,
+      businessId: settings.businessId,
       role: 'owner',
     };
     return true;
@@ -99,9 +104,7 @@ export class SessionGuard implements CanActivate {
 export function generateTestSessionCookie(
   walletAddress: string,
   secret: string,
+  ttlSeconds = 60 * 60,
 ): string {
-  return createDashboardSessionToken(walletAddress, secret);
+  return createDashboardSessionToken(walletAddress, secret, ttlSeconds);
 }
-
-/** @deprecated Use generateTestSessionCookie — kept name alias for migrations */
-export const generateTestSessionToken = generateTestSessionCookie;

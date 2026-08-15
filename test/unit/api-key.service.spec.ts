@@ -87,7 +87,10 @@ describe('ApiKeyService', () => {
     });
 
     it('returns a raw key starting with sk_live_ for live environment', async () => {
-      const fixture = buildApiKey({ environment: 'live', keyPrefix: 'sk_live_' });
+      const fixture = buildApiKey({
+        environment: 'live',
+        keyPrefix: 'sk_live_',
+      });
       mockRepo.create.mockResolvedValue(fixture);
 
       const result = await service.generate({
@@ -139,8 +142,16 @@ describe('ApiKeyService', () => {
         .mockResolvedValueOnce(fixture1)
         .mockResolvedValueOnce(fixture2);
 
-      const r1 = await service.generate({ businessId: 'biz_001', name: 'K1', environment: 'test' });
-      const r2 = await service.generate({ businessId: 'biz_001', name: 'K2', environment: 'test' });
+      const r1 = await service.generate({
+        businessId: 'biz_001',
+        name: 'K1',
+        environment: 'test',
+      });
+      const r2 = await service.generate({
+        businessId: 'biz_001',
+        name: 'K2',
+        environment: 'test',
+      });
 
       expect(r1.record.publicId).not.toBe(r2.record.publicId);
     });
@@ -165,8 +176,14 @@ describe('ApiKeyService', () => {
 
     it('returns null when the key does not match any candidate', async () => {
       const rawKey = 'sk_test_validTokenHere1234567890123456789012';
-      const wrongHash = await hashApiKey('sk_test_completelyDifferent123456789012', 4);
-      const fixture = buildApiKey({ keyPrefix: 'sk_test_', secretHash: wrongHash });
+      const wrongHash = await hashApiKey(
+        'sk_test_completelyDifferent123456789012',
+        4,
+      );
+      const fixture = buildApiKey({
+        keyPrefix: 'sk_test_',
+        secretHash: wrongHash,
+      });
 
       mockRepo.findActiveByPrefix.mockResolvedValue([fixture]);
 
@@ -178,7 +195,9 @@ describe('ApiKeyService', () => {
     it('returns null when no candidates exist for the prefix', async () => {
       mockRepo.findActiveByPrefix.mockResolvedValue([]);
 
-      const result = await service.verify('sk_test_sometoken12345678901234567890ab');
+      const result = await service.verify(
+        'sk_test_sometoken12345678901234567890ab',
+      );
 
       expect(result).toBeNull();
     });
@@ -215,10 +234,17 @@ describe('ApiKeyService', () => {
     it('matches the first valid candidate among multiple', async () => {
       const rawKey = 'sk_test_correctToken12345678901234567890ab';
       const hash = await hashApiKey(rawKey, 4);
-      const wrongHash = await hashApiKey('sk_test_wrongToken12345678901234567890ab', 4);
+      const wrongHash = await hashApiKey(
+        'sk_test_wrongToken12345678901234567890ab',
+        4,
+      );
 
       const candidates = [
-        buildApiKey({ id: 'id_1', publicId: 'key_WRONG', secretHash: wrongHash }),
+        buildApiKey({
+          id: 'id_1',
+          publicId: 'key_WRONG',
+          secretHash: wrongHash,
+        }),
         buildApiKey({ id: 'id_2', publicId: 'key_CORRECT', secretHash: hash }),
       ];
 
@@ -295,7 +321,10 @@ describe('ApiKeyService', () => {
     });
 
     it('inherits environment from the old key', async () => {
-      const oldKey = buildApiKey({ environment: 'live', keyPrefix: 'sk_live_' });
+      const oldKey = buildApiKey({
+        environment: 'live',
+        keyPrefix: 'sk_live_',
+      });
       mockRepo.findByPublicId.mockResolvedValue(oldKey);
       mockRepo.rotate.mockResolvedValue(buildApiKey({ environment: 'live' }));
 
@@ -333,7 +362,10 @@ describe('ApiKeyService', () => {
 
       await service.listForBusiness('biz_001', 'live');
 
-      expect(mockRepo.findAllForBusiness).toHaveBeenCalledWith('biz_001', 'live');
+      expect(mockRepo.findAllForBusiness).toHaveBeenCalledWith(
+        'biz_001',
+        'live',
+      );
     });
 
     it('returns an empty array when no keys exist', async () => {

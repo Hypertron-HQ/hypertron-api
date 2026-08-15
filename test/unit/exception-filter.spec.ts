@@ -2,7 +2,12 @@
  * Unit tests — HypertronExceptionFilter + RequestIdInterceptor (Phase 8)
  */
 
-import { CallHandler, ExecutionContext, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  CallHandler,
+  ExecutionContext,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import { ThrottlerException } from '@nestjs/throttler';
 import { of } from 'rxjs';
 
@@ -57,10 +62,7 @@ describe('HypertronExceptionFilter', () => {
     const request = { [REQUEST_ID_KEY]: 'req_test_12345678' };
     const host = mockHost(request, response);
 
-    filter.catch(
-      new ResourceNotFoundException('payment', 'pay_missing'),
-      host as never,
-    );
+    filter.catch(new ResourceNotFoundException('payment', 'pay_missing'), host);
 
     expect(response.statusCode).toBe(404);
     expect(response.body).toEqual({
@@ -88,7 +90,7 @@ describe('HypertronExceptionFilter', () => {
         },
         HttpStatus.BAD_REQUEST,
       ),
-      host as never,
+      host,
     );
 
     expect(response.statusCode).toBe(400);
@@ -110,7 +112,7 @@ describe('HypertronExceptionFilter', () => {
 
     filter.catch(
       new Error('Prisma P2025 Document not found in collection foobar'),
-      host as never,
+      host,
     );
 
     expect(response.statusCode).toBe(500);
@@ -131,7 +133,7 @@ describe('HypertronExceptionFilter', () => {
     const request = { [REQUEST_ID_KEY]: 'req_rl' };
     const host = mockHost(request, response);
 
-    filter.catch(new ThrottlerException(), host as never);
+    filter.catch(new ThrottlerException(), host);
 
     expect(response.statusCode).toBe(429);
     expect(response.body).toMatchObject({
@@ -143,6 +145,26 @@ describe('HypertronExceptionFilter', () => {
     });
   });
 
+  it('passes through hosted-checkout Collect-style 410 bodies', () => {
+    const response = emptyResponse();
+    const request = { [REQUEST_ID_KEY]: 'req_gone' };
+    const host = mockHost(request, response);
+
+    filter.catch(
+      new HttpException(
+        { error: 'This payment link has expired.', expired: true },
+        HttpStatus.GONE,
+      ),
+      host,
+    );
+
+    expect(response.statusCode).toBe(410);
+    expect(response.body).toEqual({
+      error: 'This payment link has expired.',
+      expired: true,
+    });
+  });
+
   it('preserves InvalidRequestException param', () => {
     const response = emptyResponse();
     const request = { [REQUEST_ID_KEY]: 'req_param' };
@@ -150,7 +172,7 @@ describe('HypertronExceptionFilter', () => {
 
     filter.catch(
       new InvalidRequestException('invalid_amount', 'bad amount', 'amount'),
-      host as never,
+      host,
     );
 
     expect(response.body).toMatchObject({

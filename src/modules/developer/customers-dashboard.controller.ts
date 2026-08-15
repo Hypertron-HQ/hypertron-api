@@ -41,7 +41,11 @@ import { SkipThrottle } from '@nestjs/throttler';
 @Controller('api/developer/customers')
 @UseGuards(SessionGuard, RolesGuard, HypertronThrottlerGuard)
 @SkipThrottle({ 'payment-create': true, read: true })
-@ApiResponse({ status: 401, description: 'Missing or invalid session', type: HypertronErrorResponseDto })
+@ApiResponse({
+  status: 401,
+  description: 'Missing or invalid session',
+  type: HypertronErrorResponseDto,
+})
 export class DeveloperCustomersController {
   constructor(private readonly customersService: CustomersService) {}
 
@@ -49,7 +53,11 @@ export class DeveloperCustomersController {
 
   @Get()
   @ApiOperation({ summary: 'List customers (dashboard)' })
-  @ApiResponse({ status: 200, description: 'Paginated list of customers', type: CustomerListResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated list of customers',
+    type: CustomerListResponseDto,
+  })
   async findAll(
     @Query() query: ListCustomersDto,
     @CurrentUser() user: SessionUser,
@@ -63,8 +71,16 @@ export class DeveloperCustomersController {
   @Get(':id')
   @ApiOperation({ summary: 'Retrieve a customer (dashboard)' })
   @ApiParam({ name: 'id', description: 'Customer publicId (cus_...)' })
-  @ApiResponse({ status: 200, description: 'Customer object', type: CustomerResponseDto })
-  @ApiResponse({ status: 404, description: 'Customer not found', type: HypertronErrorResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Customer object',
+    type: CustomerResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Customer not found',
+    type: HypertronErrorResponseDto,
+  })
   async findOne(
     @Param('id') id: string,
     @CurrentUser() user: SessionUser,

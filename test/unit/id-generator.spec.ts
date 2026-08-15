@@ -1,4 +1,9 @@
-import { generateId, idGeneratorProvider, ID_GENERATOR, PREFIXES } from '@/common/utils/id-generator';
+import {
+  generateId,
+  idGeneratorProvider,
+  ID_GENERATOR,
+  PREFIXES,
+} from '@/common/utils/id-generator';
 
 describe('id-generator', () => {
   describe('generateId()', () => {
@@ -20,11 +25,15 @@ describe('id-generator', () => {
     });
 
     it('throws for an empty prefix', () => {
-      expect(() => generateId('')).toThrow('ID prefix must be a non-empty string');
+      expect(() => generateId('')).toThrow(
+        'ID prefix must be a non-empty string',
+      );
     });
 
     it('throws for a whitespace-only prefix', () => {
-      expect(() => generateId('   ')).toThrow('ID prefix must be a non-empty string');
+      expect(() => generateId('   ')).toThrow(
+        'ID prefix must be a non-empty string',
+      );
     });
 
     it('preserves the prefix exactly (no trimming)', () => {
@@ -55,6 +64,7 @@ describe('id-generator', () => {
       expect(PREFIXES.WEBHOOK_ENDPOINT).toBe('we');
       expect(PREFIXES.WEBHOOK_DELIVERY).toBe('whd');
       expect(PREFIXES.REQUEST).toBe('req');
+      expect(PREFIXES.CHECKOUT_LINK).toBe('cl');
     });
   });
 

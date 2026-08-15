@@ -30,38 +30,35 @@ export const DEFAULT_EURC_ISSUER_TESTNET =
 export const DEFAULT_EURC_ISSUER_MAINNET =
   'GDHU6WRTMTRRCAXVSNHHSZKWNTAPDS75BOZPAV5P5W7QIT4QGC4O2NGS';
 
-export default registerAs(
-  'stellar',
-  (): StellarConfig => ({
-    testnetHorizonUrl:
-      process.env.STELLAR_TESTNET_HORIZON_URL ??
-      'https://horizon-testnet.stellar.org',
-    mainnetHorizonUrl:
-      process.env.STELLAR_MAINNET_HORIZON_URL ?? 'https://horizon.stellar.org',
-    paymentPoolAddress: process.env.PAYMENT_POOL_ADDRESS?.trim() ?? '',
-    testnetDestinationAddress:
-      process.env.STELLAR_TESTNET_DESTINATION_ADDRESS?.trim() ?? '',
-    mainnetDestinationAddress:
-      process.env.STELLAR_MAINNET_DESTINATION_ADDRESS?.trim() ?? '',
-    usdcIssuerTestnet:
-      process.env.STELLAR_USDC_ISSUER_TESTNET?.trim() ||
-      DEFAULT_USDC_ISSUER_TESTNET,
-    usdcIssuerMainnet:
-      process.env.STELLAR_USDC_ISSUER_MAINNET?.trim() ||
-      DEFAULT_USDC_ISSUER_MAINNET,
-    eurcIssuerTestnet:
-      process.env.STELLAR_EURC_ISSUER_TESTNET?.trim() ||
-      DEFAULT_EURC_ISSUER_TESTNET,
-    eurcIssuerMainnet:
-      process.env.STELLAR_EURC_ISSUER_MAINNET?.trim() ||
-      DEFAULT_EURC_ISSUER_MAINNET,
-    finalityDelayMs: parseInt(
-      process.env.STELLAR_FINALITY_DELAY_MS ?? '5000',
-      10,
-    ),
-    reconcilerLookback: parseInt(
-      process.env.STELLAR_RECONCILER_LOOKBACK ?? '50',
-      10,
-    ),
-  }),
-);
+export default registerAs('stellar', (): StellarConfig => ({
+  testnetHorizonUrl:
+    process.env.STELLAR_TESTNET_HORIZON_URL ??
+    'https://horizon-testnet.stellar.org',
+  mainnetHorizonUrl:
+    process.env.STELLAR_MAINNET_HORIZON_URL ?? 'https://horizon.stellar.org',
+  paymentPoolAddress: process.env.PAYMENT_POOL_ADDRESS?.trim() ?? '',
+  testnetDestinationAddress:
+    process.env.STELLAR_TESTNET_DESTINATION_ADDRESS?.trim() ?? '',
+  mainnetDestinationAddress:
+    process.env.STELLAR_MAINNET_DESTINATION_ADDRESS?.trim() ?? '',
+  usdcIssuerTestnet:
+    process.env.STELLAR_USDC_ISSUER_TESTNET?.trim() ||
+    DEFAULT_USDC_ISSUER_TESTNET,
+  usdcIssuerMainnet:
+    process.env.STELLAR_USDC_ISSUER_MAINNET?.trim() ||
+    DEFAULT_USDC_ISSUER_MAINNET,
+  eurcIssuerTestnet:
+    process.env.STELLAR_EURC_ISSUER_TESTNET?.trim() ||
+    DEFAULT_EURC_ISSUER_TESTNET,
+  eurcIssuerMainnet:
+    process.env.STELLAR_EURC_ISSUER_MAINNET?.trim() ||
+    DEFAULT_EURC_ISSUER_MAINNET,
+  finalityDelayMs: parseInt(
+    process.env.STELLAR_FINALITY_DELAY_MS ?? '5000',
+    10,
+  ),
+  reconcilerLookback: parseInt(
+    process.env.STELLAR_RECONCILER_LOOKBACK ?? '50',
+    10,
+  ),
+}));

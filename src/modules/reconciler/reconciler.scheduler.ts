@@ -59,8 +59,6 @@ export class ReconcilerScheduler implements OnModuleInit {
       },
     );
 
-    this.logger.log(
-      'Registered reconciler schedulers (poll 30s, expiry 60s)',
-    );
+    this.logger.log('Registered reconciler schedulers (poll 30s, expiry 60s)');
   }
 }

@@ -22,7 +22,9 @@
     "openapi:check": "pnpm openapi:generate && git diff --exit-code openapi.yaml",
     "docker:build": "docker build -t hypertron-api:local .",
     "docker:up": "docker compose up --build -d",
-    "load:rate-limit": "node scripts/load-rate-limit.mjs"
+    "load:rate-limit": "node scripts/load-rate-limit.mjs",
+    "db:push": "echo 'BLOCKED: use db:push:api for hypertron_api only — never push against core.' && exit 1",
+    "db:push:api": "prisma db push"
   },
   "dependencies": {
     "@nest-lab/throttler-storage-redis": "^1.2.0",

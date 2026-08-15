@@ -83,6 +83,14 @@ export class HypertronExceptionFilter implements ExceptionFilter {
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       const body = exception.getResponse();
+      const collectBody = collectStyleBody(body);
+      if (collectBody) {
+        if (!response.getHeader('X-Request-Id')) {
+          response.setHeader('X-Request-Id', requestId);
+        }
+        response.status(status).json(collectBody);
+        return;
+      }
       const shaped = shapeHttpException(status, body, requestId);
       if (status >= 500) {
         this.logger.error(
@@ -111,10 +119,7 @@ export class HypertronExceptionFilter implements ExceptionFilter {
 
     const message =
       exception instanceof Error ? exception.message : 'Unknown error';
-    this.logger.error(
-      { err: message, requestId },
-      'Unhandled exception',
-    );
+    this.logger.error({ err: message, requestId }, 'Unhandled exception');
 
     this.write(
       response,
@@ -160,6 +165,19 @@ function resolveRequestId(
   return 'req_unknown';
 }
 
+/** Hosted-checkout / Collect public errors: `{ error: string, expired?: boolean }`. */
+function collectStyleBody(
+  body: string | object,
+): { error: string; expired?: boolean } | null {
+  if (!body || typeof body !== 'object') return null;
+  const record = body as Record<string, unknown>;
+  if (typeof record.error !== 'string') return null;
+  if ('statusCode' in record || 'message' in record) return null;
+  return record.expired === true
+    ? { error: record.error, expired: true }
+    : { error: record.error };
+}
+
 function shapeHttpException(
   status: number,
   body: string | object,
@@ -176,8 +194,11 @@ function shapeHttpException(
     }
 
     const messages = record.message;
-    if (Array.isArray(messages) && messages.every((m) => typeof m === 'string')) {
-      const first = messages[0] as string;
+    if (
+      Array.isArray(messages) &&
+      messages.every((m) => typeof m === 'string')
+    ) {
+      const first = messages[0];
       const param = extractValidationParam(first);
       return {
         type: 'invalid_request_error',

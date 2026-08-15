@@ -55,6 +55,7 @@ export function buildOpenApiConfig() {
     )
     .addTag('Payments', 'Create, read, list, and cancel payments')
     .addTag('Customers', 'Merchant-scoped customer records')
+    .addTag('Checkout Links', 'Public hosted-checkout lookup for /pay/cl_…')
     .addTag('Developer', 'Dashboard control-plane: API keys and webhooks')
     .addTag('Health', 'Health and readiness checks')
     .build();

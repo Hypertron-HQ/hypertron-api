@@ -35,8 +35,16 @@ import {
 @Controller('v1/customers')
 @UseGuards(ApiKeyGuard, HypertronThrottlerGuard)
 @SkipThrottle({ 'payment-create': true, dashboard: true })
-@ApiResponse({ status: 401, description: 'Invalid or missing API key', type: HypertronErrorResponseDto })
-@ApiResponse({ status: 429, description: 'Rate limit exceeded', type: HypertronErrorResponseDto })
+@ApiResponse({
+  status: 401,
+  description: 'Invalid or missing API key',
+  type: HypertronErrorResponseDto,
+})
+@ApiResponse({
+  status: 429,
+  description: 'Rate limit exceeded',
+  type: HypertronErrorResponseDto,
+})
 export class CustomersController {
   constructor(private readonly customersService: CustomersService) {}
 
@@ -45,20 +53,35 @@ export class CustomersController {
     summary: 'List customers',
     description: 'Cursor-paginated merchant-scoped customer list.',
   })
-  @ApiResponse({ status: 200, description: 'Paginated list', type: CustomerListResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated list',
+    type: CustomerListResponseDto,
+  })
   async findAll(
     @Query() query: ListCustomersDto,
     @CurrentMerchant() merchant: MerchantContext,
   ): Promise<CustomerListResponseDto> {
-    const page = await this.customersService.findAll(query, merchant.businessId);
+    const page = await this.customersService.findAll(
+      query,
+      merchant.businessId,
+    );
     return toCustomerListResponse(page.data, page.hasMore, page.nextCursor);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Retrieve a customer' })
   @ApiParam({ name: 'id', description: 'Customer publicId (cus_...)' })
-  @ApiResponse({ status: 200, description: 'Customer object', type: CustomerResponseDto })
-  @ApiResponse({ status: 404, description: 'Customer not found', type: HypertronErrorResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Customer object',
+    type: CustomerResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Customer not found',
+    type: HypertronErrorResponseDto,
+  })
   async findOne(
     @Param('id') id: string,
     @CurrentMerchant() merchant: MerchantContext,

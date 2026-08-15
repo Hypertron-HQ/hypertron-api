@@ -29,16 +29,12 @@ describe('isValidDecimalString()', () => {
   });
 
   describe('invalid inputs — zero / negative', () => {
-    it.each([
-      ['0'],
-      ['0.0'],
-      ['0.00'],
-      ['00'],
-      ['-1'],
-      ['-0.5'],
-    ])('rejects %s', (value) => {
-      expect(isValidDecimalString(value)).toBe(false);
-    });
+    it.each([['0'], ['0.0'], ['0.00'], ['00'], ['-1'], ['-0.5']])(
+      'rejects %s',
+      (value) => {
+        expect(isValidDecimalString(value)).toBe(false);
+      },
+    );
   });
 
   describe('invalid inputs — format issues', () => {
@@ -123,7 +119,9 @@ describe('currencyMaxPrecision()', () => {
 
   it('is consistent with CURRENCY_MAX_PRECISION constant', () => {
     for (const [currency, max] of Object.entries(CURRENCY_MAX_PRECISION)) {
-      expect(currencyMaxPrecision(currency as 'USDC' | 'EURC' | 'XLM')).toBe(max);
+      expect(currencyMaxPrecision(currency as 'USDC' | 'EURC' | 'XLM')).toBe(
+        max,
+      );
     }
   });
 });
@@ -199,7 +197,9 @@ describe('addDecimalStrings()', () => {
     });
 
     it('throws for non-string input b', () => {
-      expect(() => addDecimalStrings('1', undefined as unknown as string)).toThrow();
+      expect(() =>
+        addDecimalStrings('1', undefined as unknown as string),
+      ).toThrow();
     });
 
     it('throws for scientific notation in a', () => {

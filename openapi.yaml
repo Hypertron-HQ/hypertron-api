@@ -1024,6 +1024,31 @@ paths:
       summary: List events for a payment
       tags:
         - Payments
+  /v1/checkout-links/{publicId}:
+    get:
+      description: Unauthenticated hosted-checkout lookup by publicId (cl_…). Used by /pay/cl_…
+      operationId: CheckoutLinksController_getPublic
+      parameters:
+        - name: publicId
+          required: true
+          in: path
+          description: Checkout link publicId (cl_...)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Public checkout payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicCheckoutLinkResponseDto'
+        '404':
+          description: Checkout link not found
+        '410':
+          description: Checkout link expired
+      summary: Resolve a public checkout link
+      tags:
+        - Checkout Links
 info:
   title: Hypertron Payments API
   description: >-
@@ -1037,6 +1062,8 @@ tags:
     description: Create, read, list, and cancel payments
   - name: Customers
     description: Merchant-scoped customer records
+  - name: Checkout Links
+    description: Public hosted-checkout lookup for /pay/cl_…
   - name: Developer
     description: 'Dashboard control-plane: API keys and webhooks'
   - name: Health
@@ -1761,3 +1788,59 @@ components:
       required:
         - object
         - data
+    PublicCheckoutLinkResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+          example: cl_01JABC123
+        amount:
+          type: string
+          example: '25.00'
+        currency:
+          type: string
+          example: USDC
+        memo:
+          type: string
+          example: hpl_abc123
+        destinationAddress:
+          type: string
+          example: G...
+        purpose:
+          type: string
+          nullable: true
+        businessName:
+          type: string
+          nullable: true
+        clientName:
+          type: string
+          nullable: true
+        workflowStage:
+          type: string
+          nullable: true
+        metadata:
+          type: string
+          nullable: true
+        paymentMethods:
+          example:
+            - wallet
+            - qr
+          type: array
+          items:
+            type: string
+        expiresAt:
+          type: string
+          nullable: true
+        paidAt:
+          type: string
+          nullable: true
+        paymentTxHash:
+          type: string
+          nullable: true
+      required:
+        - id
+        - amount
+        - currency
+        - memo
+        - destinationAddress
+        - paymentMethods
