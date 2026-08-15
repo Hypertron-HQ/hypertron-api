@@ -5,6 +5,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
+import { MongoClient, type Db, type IndexDescriptionInfo } from 'mongodb';
 
 import { environmentScopeExtension } from './environment-scope.extension';
 
@@ -60,8 +61,11 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
-    this.logger.log('Disconnecting from MongoDB...');
+    // Render sends SIGTERM to the old instance during deploys and hibernation.
+    // This is expected graceful shutdown, not a database failure.
+    this.logger.log('Graceful shutdown: disconnecting from MongoDB...');
     await this.client.$disconnect();
+    this.logger.log('Graceful shutdown: MongoDB disconnected cleanly');
   }
 
   /**
@@ -74,11 +78,23 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
    * This is idempotent and runs before Render starts accepting requests.
    */
   private async repairMongoIndexes(): Promise<void> {
+    const databaseUrl = process.env.DATABASE_URL;
+    if (!databaseUrl) {
+      throw new Error('DATABASE_URL is required for MongoDB index repair');
+    }
+
+    // Prisma's raw-command decoder cannot reliably inspect listIndexes output
+    // from every MongoDB version. A short-lived native client lets us inspect
+    // first and mutate only when needed, avoiding expected error-level logs.
+    const mongoClient = new MongoClient(databaseUrl);
+
     try {
+      await mongoClient.connect();
+      const database = mongoClient.db();
       const obsoleteApiKeyIndex =
         'api_keys_businessId_environment_keyPrefix_key';
       if (
-        await this.dropIndexIfPresent('api_keys', obsoleteApiKeyIndex)
+        await this.dropIndexIfPresent(database, 'api_keys', obsoleteApiKeyIndex)
       ) {
         this.logger.warn(
           `Dropped obsolete unique index ${obsoleteApiKeyIndex}`,
@@ -86,19 +102,37 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
       }
 
       const transactionIndexName = 'payments_transactionHash_key';
-      try {
-        await this.createTransactionHashIndex(transactionIndexName);
-      } catch (error) {
-        if (!isIndexOptionsConflict(error)) throw error;
+      const payments = database.collection('payments');
+      const indexes = await this.listIndexesIfCollectionExists(
+        database,
+        'payments',
+      );
+      let hasDesiredTransactionHashIndex = false;
 
-        await this.dropIndexIfPresent('payments', transactionIndexName);
-        this.logger.warn(
-          `Dropped incompatible index ${transactionIndexName}`,
+      for (const index of indexes.filter(isTransactionHashIndex)) {
+        if (isDesiredTransactionHashIndex(index)) {
+          hasDesiredTransactionHashIndex = true;
+          continue;
+        }
+
+        if (index.name) {
+          await payments.dropIndex(index.name);
+          this.logger.warn(`Dropped incompatible index ${index.name}`);
+        }
+      }
+
+      if (!hasDesiredTransactionHashIndex) {
+        await payments.createIndex(
+          { transactionHash: 1 },
+          {
+            name: transactionIndexName,
+            unique: true,
+            partialFilterExpression: {
+              transactionHash: { $type: 'string' },
+            },
+          },
         );
-        await this.createTransactionHashIndex(transactionIndexName);
-        this.logger.log(
-          `Created partial unique index ${transactionIndexName}`,
-        );
+        this.logger.log(`Created partial unique index ${transactionIndexName}`);
       }
     } catch (error) {
       const message =
@@ -106,34 +140,34 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
       const stack = error instanceof Error ? error.stack : undefined;
       this.logger.error(`MongoDB index repair failed: ${message}`, stack);
       throw error;
+    } finally {
+      await mongoClient.close();
     }
   }
 
-  private async createTransactionHashIndex(name: string): Promise<void> {
-    await this.client.$runCommandRaw({
-      createIndexes: 'payments',
-      indexes: [
-        {
-          key: { transactionHash: 1 },
-          name,
-          unique: true,
-          partialFilterExpression: {
-            transactionHash: { $type: 'string' },
-          },
-        },
-      ],
-    });
+  private async listIndexesIfCollectionExists(
+    database: Db,
+    collection: string,
+  ): Promise<IndexDescriptionInfo[]> {
+    const exists = await database
+      .listCollections({ name: collection }, { nameOnly: true })
+      .hasNext();
+    if (!exists) return [];
+
+    const indexes = (await database
+      .collection(collection)
+      .listIndexes()
+      .toArray()) as IndexDescriptionInfo[];
+    return indexes;
   }
 
   private async dropIndexIfPresent(
+    database: Db,
     collection: string,
     name: string,
   ): Promise<boolean> {
     try {
-      await this.client.$runCommandRaw({
-        dropIndexes: collection,
-        index: name,
-      });
+      await database.collection(collection).dropIndex(name);
       return true;
     } catch (error) {
       if (isIndexNotFound(error)) return false;
@@ -145,10 +179,18 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
 function mongoErrorCode(error: unknown): string {
   if (!error || typeof error !== 'object') return '';
   const record = error as {
+    code?: unknown;
+    codeName?: unknown;
     message?: unknown;
     meta?: { code?: unknown; message?: unknown };
   };
-  return [record.meta?.code, record.meta?.message, record.message]
+  return [
+    record.code,
+    record.codeName,
+    record.meta?.code,
+    record.meta?.message,
+    record.message,
+  ]
     .filter((value) => value !== undefined)
     .map(String)
     .join(' ');
@@ -156,14 +198,22 @@ function mongoErrorCode(error: unknown): string {
 
 function isIndexNotFound(error: unknown): boolean {
   const text = mongoErrorCode(error);
-  return /\b27\b|IndexNotFound|index not found/i.test(text);
+  return /\b26\b|\b27\b|NamespaceNotFound|IndexNotFound|index not found/i.test(
+    text,
+  );
 }
 
-function isIndexOptionsConflict(error: unknown): boolean {
-  const text = mongoErrorCode(error);
+function isTransactionHashIndex(index: IndexDescriptionInfo): boolean {
+  const entries = Object.entries(index.key ?? {});
   return (
-    /\b85\b|\b86\b|IndexOptionsConflict|IndexKeySpecsConflict|already exists with a different/i.test(
-      text,
-    )
+    entries.length === 1 &&
+    entries[0][0] === 'transactionHash' &&
+    entries[0][1] === 1
   );
+}
+
+function isDesiredTransactionHashIndex(index: IndexDescriptionInfo): boolean {
+  const partial = index.partialFilterExpression as
+    { transactionHash?: { $type?: unknown } } | undefined;
+  return index.unique === true && partial?.transactionHash?.$type === 'string';
 }

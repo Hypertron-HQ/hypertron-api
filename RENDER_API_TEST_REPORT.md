@@ -2,13 +2,12 @@
 
 **Target:** https://hypertron-api.onrender.com  
 **Core:** https://hypertron-core-backend.onrender.com  
-**Retested:** 2026-08-15T19:47:20Z (UTC)  
-**This run:** full flow (identity → internal sync → mint `sk_live_` → payments / customers / webhooks)
+**Retested:** 2026-08-15T20:15Z (UTC)
+**This run:** full flow (identity → internal sync → mint `sk_test_` → payments / customers / webhooks)
 
-> **Deployment status (2026-08-15T19:59Z UTC):** fixes are implemented
-> and verified locally, but are **not on the deployed URL until this branch is
-> pushed and Render redeploys it**. The live score below describes the current
-> pre-fix Render deployment.
+> **Deployment status:** the fixes are live on Render. All 39 checks passed.
+> MongoDB is up, the core backend integration is configured, and Redis is
+> intentionally disabled.
 
 ### Local fix verification
 
@@ -35,7 +34,7 @@ and stack trace for unhandled 500s. Client responses remain sanitized.
 - Core: `Authorization: Bearer $CORE_BACKEND_SERVICE_ACCOUNT_API_KEY` (`ht_svc_…`)
 - API internal: `X-Internal-Token: $INTERNAL_SERVICE_TOKEN`
 - Dashboard: HMAC `ht_dashboard` cookie (`AUTH_SECRET`, wallet = core service account `GSVC…`)
-- Merchant API: `sk_live_` created this run (`key_01M03FDVJZYXY396979ZK8NR3F`)
+- Merchant API: temporary `sk_test_` created, rotated, and revoked during this run
 
 ---
 
@@ -43,11 +42,11 @@ and stack trace for unhandled 500s. Client responses remain sanitized.
 
 | | Count |
 |---|---|
-| **Passed** | **24** |
-| **Failed** | **15** |
+| **Passed** | **39** |
+| **Failed** | **0** |
 | Total curls | 39 |
 
-Core-backend: **5 / 5 PASS**.
+Core-backend: **5 / 5 PASS**. Hypertron API: **34 / 34 PASS**.
 
 `GET /health` this run: **200** (`database: up`, `coreBackend: configured`, `redis: disabled`).
 
@@ -82,37 +81,39 @@ Core-backend: **5 / 5 PASS**.
 | # | Request | Got | Want | Status |
 |---|---|---|---|---|
 | 13 | `GET /api/developer/api-keys` no cookie | 401 | 401 | PASS |
-| 14 | `GET /api/developer/api-keys` session | **500** | 200 | **FAIL** |
-| 15 | `POST /api/developer/api-keys` create **live** | 201 | 201 | PASS `key_01M03FDVJZYXY396979ZK8NR3F` |
-| 16 | `POST …/rotate` | **500** | 201 | **FAIL** |
-| 17 | `POST …/revoke` | **500** | 200 | **FAIL** |
+| 14 | `GET /api/developer/api-keys` session | 200 | 200 | PASS |
+| 15 | `POST /api/developer/api-keys` create **test** | 201 | 201 | PASS |
+| 16 | `POST …/rotate` | 200 | 200 | PASS |
+| 17 | `POST …/revoke` | 200 | 200 | PASS |
 
-A second **test** key is blocked by schema unique `(businessId, environment, keyPrefix)` — only one `sk_test_` and one `sk_live_` per business. First test key already exists from the previous run; this run minted **live**.
+A second test key was created successfully, confirming the obsolete
+`(businessId, environment, keyPrefix)` unique index was removed.
 
-### Payments / checkout (`sk_live_`)
+### Payments / checkout (`sk_test_`)
 
 | # | Request | Got | Want | Status |
 |---|---|---|---|---|
 | 18 | `POST /v1/payments` missing Idempotency-Key | 400 | 400 | PASS |
 | 19 | `POST /v1/payments` bad key | 401 | 401 | PASS |
-| 20 | `POST /v1/payments` create | **409** | 201 | **FAIL** |
-| 21 | `POST /v1/payments` replay | **409** | 201 | **FAIL** (create never succeeded) |
-| 22 | `GET /v1/payments` list | 200 | 200 | PASS (`n=0` — no live payments) |
+| 20 | `POST /v1/payments` create | 201 | 201 | PASS |
+| 21 | `POST /v1/payments` replay | 201 | 201 | PASS (same payment ID) |
+| 22 | `GET /v1/payments` list | 200 | 200 | PASS |
 | 23 | `GET /v1/payments` unknown | 404 | 404 | PASS |
-| 24 | `GET /v1/payments/:id` | **404** | 200 | **FAIL** (no id — create 409) |
-| 25 | `GET /v1/payments/:id/events` | **404** | 200 | **FAIL** |
+| 24 | `GET /v1/payments/:id` | 200 | 200 | PASS |
+| 25 | `GET /v1/payments/:id/events` | 200 | 200 | PASS |
 | 26 | `GET /v1/checkout-links` unknown | 404 | 404 | PASS |
-| 27 | `GET /v1/checkout-links/:id` | **404** | 200 | **FAIL** |
-| 28 | `POST /v1/payments` cancel setup | **409** | 201 | **FAIL** |
+| 27 | `GET /v1/checkout-links/:id` | 200 | 200 | PASS |
+| 28 | `POST /v1/payments/:id/cancel` | 200 | 200 | PASS |
 
-Earlier run (test key) **did** create `pay_01M03ECJTY0XVX34QX9A178R2R`. Further creates now 409 for both test and live.
+Payment creation succeeded; the idempotent replay returned the same payment ID.
+A separate payment was created and canceled.
 
 ### Customers
 
 | # | Request | Got | Want | Status |
 |---|---|---|---|---|
-| 29 | `GET /v1/customers` | 200 | 200 | PASS (`n=4`) |
-| 30 | `GET /v1/customers/:id` | 200 | 200 | PASS `cus_01M03FEM4S3KTHTGXHM8E1XEZ7` |
+| 29 | `GET /v1/customers` | 200 | 200 | PASS (`n=8`) |
+| 30 | `GET /v1/customers/:id` | 200 | 200 | PASS |
 | 31 | `GET /v1/customers` unknown | 404 | 404 | PASS |
 | 32 | `GET /api/developer/customers` | 200 | 200 | PASS |
 
@@ -120,27 +121,29 @@ Earlier run (test key) **did** create `pay_01M03ECJTY0XVX34QX9A178R2R`. Further 
 
 | # | Request | Got | Want | Status |
 |---|---|---|---|---|
-| 33 | `POST /api/developer/webhook-endpoints` | 201 | 201 | PASS `we_01M03FEYRQ8NPYT9K1VWADAN8H` |
-| 34 | `GET` list | **500** | 200 | **FAIL** |
-| 35 | `PATCH :id` | **500** | 200 | **FAIL** |
-| 36 | `POST :id/rotate-secret` | **500** | 200 | **FAIL** |
-| 37 | `POST :id/test` | **500** | 200 | **FAIL** |
-| 38 | `GET :id/deliveries` | **500** | 200 | **FAIL** |
-| 39 | `DELETE :id` | **500** | 200 | **FAIL** |
+| 33 | `POST /api/developer/webhook-endpoints` | 201 | 201 | PASS |
+| 34 | `GET` list | 200 | 200 | PASS |
+| 35 | `PATCH :id` | 200 | 200 | PASS |
+| 36 | `POST :id/rotate-secret` | 200 | 200 | PASS |
+| 37 | `POST :id/test` | 200 | 200 | PASS |
+| 38 | `GET :id/deliveries` | 200 | 200 | PASS |
+| 39 | `DELETE :id` | 200 | 200 | PASS |
 
 ---
 
-## Errors (verbatim live bodies)
+## Previously observed errors — resolved
 
-### 1. Dashboard list / mutate — HTTP 500
+### 1. Dashboard list / mutate — previously HTTP 500
 
 ```json
 {"error":{"type":"api_error","code":"api_error","message":"An unexpected error occurred. Please try again later.","request_id":"req_01M03FDSQ5TV8JP8ZBVJGQAMSG"}}
 ```
 
-Same shape for: api-keys GET/rotate/revoke; webhook list/patch/rotate-secret/test/deliveries/delete.
+This is retained as historical evidence from the pre-fix deployment. All
+API-key and webhook list/mutation requests now return their expected 2xx status.
 
-**Cause (code):** Prisma `environment-scope` extension throws `MissingEnvironmentError` when `where` has `businessId` but no `environment: 'test'|'live'`. Dashboard list is cross-env by design. Unique `publicId` lookups also omit `environment`. Production filter maps that to a generic 500 (no stack in the JSON).
+**Resolved cause:** the Prisma `environment-scope` extension previously rejected
+cross-environment dashboard queries and globally unique public-ID lookups.
 
 Affected queries:
 - `apiKey.findMany({ where: { businessId: { in: […] } } })`
@@ -149,21 +152,25 @@ Affected queries:
 - `webhookEndpoint.findFirst({ where: { publicId, businessId } })`
 - `payment.findFirst({ where: { publicId, businessId } })` (events — 500 in the prior run)
 
-### 2. Create payment — HTTP 409
+### 2. Create payment — previously HTTP 409
 
 ```json
 {"error":{"type":"idempotency_error","code":"conflict","message":"A conflicting resource already exists.","request_id":"req_01M03FE1V6B28N8NBPDD1ZMQHX"}}
 ```
 
-**Cause (code):** Prisma `P2002` unique violation mapped to `idempotency_error`. Schema has `transactionHash String? @unique`. Mongo unique indexes treat `null` as a value, so **only one payment with a null tx hash can exist**. After the first successful payment, every later `POST /v1/payments` 409s. Same for a second test API key: `@@unique([businessId, environment, keyPrefix])` allows only one `sk_test_` and one `sk_live_` per business.
+**Resolved cause:** MongoDB's old unique index treated `null` transaction hashes
+as duplicates. Startup repair replaced it with a partial unique index that only
+indexes string hashes. Multiple pending payments and same-environment API keys
+now work.
 
-### 3. Follow-on 404s
+### 3. Follow-on 404s — resolved
 
-`GET payment`, `GET events`, `GET checkout`, cancel — failed because create never returned an id (`No such payment: 'undefined'` / `Checkout link not found`).
+Payment details, events, public checkout, and cancellation all passed once
+payment creation succeeded.
 
 ---
 
-## What works on live
+## Live result summary
 
 ```
 CORE GET /                 200  hypertron-core-backend ok
@@ -172,9 +179,14 @@ CORE GET /api/auth/me      200  auth: service
 API  GET /                 200  hypertron-api ok
 API  GET /health           200  database:up  coreBackend:configured  redis:disabled
 API  PUT /internal/merchant-settings  200  businessId cmsuoj7ws0001uune7slmpnts
-API  POST /api/developer/api-keys     201  key_01M03FDVJZYXY396979ZK8NR3F  sk_live_
+API  POST /api/developer/api-keys     201  sk_test_
+API  POST /v1/payments                201  pending
+API  POST /v1/payments replay         201  same payment ID
+API  GET  payment/events/checkout     200
+API  POST payment cancel              200  canceled
 API  GET  /v1/customers               200
-API  POST webhook-endpoints           201  we_01M03FEYRQ8NPYT9K1VWADAN8H
+API  webhook lifecycle                2xx  create/list/update/rotate/test/delete
+API  API-key lifecycle                2xx  create/list/rotate/revoke
 ```
 
 ---
@@ -190,7 +202,7 @@ API  POST webhook-endpoints           201  we_01M03FEYRQ8NPYT9K1VWADAN8H
 
 ---
 
-## Fixes implemented locally (awaiting Render redeploy)
+## Deployed fixes verified
 
 1. Environment-scope now permits business-scoped globally unique `publicId`
    lookups and explicit dashboard scope across `test` + `live`.
@@ -203,5 +215,4 @@ API  POST webhook-endpoints           201  we_01M03FEYRQ8NPYT9K1VWADAN8H
 5. E2E regressions cover every previously failing dashboard/payment/webhook
    path.
 
-After push + successful Render deployment, rerun the live curl suite and replace
-the 24/15 pre-fix score above with the post-deploy result.
+The post-deploy curl run verified all five fixes with **39 passed / 0 failed**.
