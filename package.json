@@ -24,6 +24,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json --runInBand",
     "openapi:generate": "ts-node -r tsconfig-paths/register scripts/generate-openapi.ts",
     "openapi:check": "pnpm openapi:generate && git diff --exit-code openapi.yaml",
+    "postman:generate": "node scripts/generate-postman-collection.mjs",
     "docker:build": "docker build -t hypertron-api:local .",
     "docker:up": "docker compose up --build -d",
     "load:rate-limit": "node scripts/load-rate-limit.mjs",

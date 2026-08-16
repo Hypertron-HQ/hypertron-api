@@ -1,0 +1,1585 @@
+{
+  "info": {
+    "_postman_id": "8cf55bf2-5d0a-48d8-bf42-d51b5bcd68b1",
+    "name": "Hypertron Render — Complete API",
+    "description": "Complete deployed Hypertron API flow. Import the companion environment, fill the three secret variables, and run folders in order. Test records are created in the test environment.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const secret = pm.variables.get('authSecret');",
+          "const wallet = pm.variables.get('walletAddress');",
+          "if (secret && wallet) {",
+          "  const CryptoJS = require('crypto-js');",
+          "  const base64Url = (wordArray) => CryptoJS.enc.Base64",
+          "    .stringify(wordArray)",
+          "    .replace(/=/g, '')",
+          "    .replace(/\\+/g, '-')",
+          "    .replace(/\\//g, '_');",
+          "  const payload = {",
+          "    w: wallet,",
+          "    exp: Math.floor(Date.now() / 1000) + 3600,",
+          "  };",
+          "  const encoded = base64Url(",
+          "    CryptoJS.enc.Utf8.parse(JSON.stringify(payload)),",
+          "  );",
+          "  const signature = base64Url(CryptoJS.HmacSHA256(encoded, secret));",
+          "  const dashboardCookie = `${encoded}.${signature}`;",
+          "  pm.collectionVariables.set('dashboardCookie', dashboardCookie);",
+          "  if (pm.environment) pm.environment.set('dashboardCookie', dashboardCookie);",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "apiBaseUrl",
+      "value": "https://hypertron-api.onrender.com"
+    },
+    {
+      "key": "coreBaseUrl",
+      "value": "https://hypertron-core-backend.onrender.com"
+    },
+    {
+      "key": "serviceAccountApiKey",
+      "value": ""
+    },
+    {
+      "key": "internalServiceToken",
+      "value": ""
+    },
+    {
+      "key": "authSecret",
+      "value": ""
+    },
+    {
+      "key": "dashboardCookie",
+      "value": ""
+    },
+    {
+      "key": "businessId",
+      "value": ""
+    },
+    {
+      "key": "walletAddress",
+      "value": ""
+    },
+    {
+      "key": "receiveAddress",
+      "value": "GAZISNSU3JSJHGEWU2GUFXZSOGMNY2ECQBTJPWAB5P26M7MEUBCIIRKZ"
+    },
+    {
+      "key": "merchantApiKey",
+      "value": ""
+    },
+    {
+      "key": "apiKeyId",
+      "value": ""
+    },
+    {
+      "key": "idempotencyKey",
+      "value": ""
+    },
+    {
+      "key": "customerEmail",
+      "value": ""
+    },
+    {
+      "key": "paymentId",
+      "value": ""
+    },
+    {
+      "key": "checkoutLinkId",
+      "value": ""
+    },
+    {
+      "key": "customerId",
+      "value": ""
+    },
+    {
+      "key": "customerDatabaseId",
+      "value": ""
+    },
+    {
+      "key": "webhookEndpointId",
+      "value": ""
+    },
+    {
+      "key": "webhookSigningSecret",
+      "value": ""
+    },
+    {
+      "key": "deliveryId",
+      "value": ""
+    },
+    {
+      "key": "webhookTargetUrl",
+      "value": "https://postman-echo.com/post"
+    }
+  ],
+  "item": [
+    {
+      "name": "00 — Core backend setup",
+      "description": "Verifies the deployed core backend and captures the service wallet and business ID used by Hypertron API.",
+      "item": [
+        {
+          "name": "Core identity",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{coreBaseUrl}}/"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Core health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{coreBaseUrl}}/health"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Core auth/me — unauthenticated",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{coreBaseUrl}}/api/auth/me"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([401]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Core auth/me — service account",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{serviceAccountApiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{coreBaseUrl}}/api/auth/me"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('serviceAccountApiKey')) {",
+                  "  pm.execution.skipRequest();",
+                  "  throw new Error('serviceAccountApiKey is empty. Set it in the selected Postman environment.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};",
+                  "const json = pm.response.json();",
+                  "if (json.walletAddress) setRuntime('walletAddress', json.walletAddress);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Core business profile — service account",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{serviceAccountApiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{coreBaseUrl}}/api/business/profile"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('serviceAccountApiKey')) {",
+                  "  pm.execution.skipRequest();",
+                  "  throw new Error('serviceAccountApiKey is empty. Set it in the selected Postman environment.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};",
+                  "const json = pm.response.json();",
+                  "if (json.businessId) setRuntime('businessId', json.businessId);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "01 — API health and internal sync",
+      "item": [
+        {
+          "name": "API identity",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apiBaseUrl}}/"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "API health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apiBaseUrl}}/health"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Prometheus metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apiBaseUrl}}/metrics"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sync merchant settings",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-Internal-Token",
+                "value": "{{internalServiceToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{apiBaseUrl}}/internal/merchant-settings",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"businessId\": \"{{businessId}}\",\n  \"walletAddress\": \"{{walletAddress}}\",\n  \"receiveAddress\": \"{{receiveAddress}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('internalServiceToken')) {",
+                  "  pm.execution.skipRequest();",
+                  "  throw new Error('internalServiceToken is empty. Set it in the selected Postman environment.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 — Developer API keys",
+      "item": [
+        {
+          "name": "List API keys",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "ht_dashboard={{dashboardCookie}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{apiBaseUrl}}/api/developer/api-keys"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('dashboardCookie')) {",
+                  "  pm.execution.skipRequest();",
+                  "  throw new Error('dashboardCookie is empty. Run folders 00 and 01 first, and set authSecret.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create test API key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "ht_dashboard={{dashboardCookie}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{apiBaseUrl}}/api/developer/api-keys",
+            "description": "Saves the one-time secret_key as merchantApiKey for subsequent merchant API requests.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman test {{$timestamp}}\",\n  \"environment\": \"test\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('dashboardCookie')) {",
+                  "  pm.execution.skipRequest();",
+                  "  throw new Error('dashboardCookie is empty. Run folders 00 and 01 first, and set authSecret.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([201]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};",
+                  "const json = pm.response.json();",
+                  "if (json.id) setRuntime('apiKeyId', json.id);",
+                  "if (json.secret_key) setRuntime('merchantApiKey', json.secret_key);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 — Payments and checkout",
+      "item": [
+        {
+          "name": "Create payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{merchantApiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}",
+                "type": "text"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "postman-{{$guid}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{apiBaseUrl}}/v1/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"4.00\",\n  \"currency\": \"USDC\",\n  \"description\": \"Postman Render flow\",\n  \"customer_email\": \"{{customerEmail}}\",\n  \"customer_name\": \"Postman Test Customer\",\n  \"metadata\": {\n    \"source\": \"postman\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('merchantApiKey')) {",
+                  "  pm.execution.skipRequest();",
+                  "  throw new Error('merchantApiKey is empty. Run \"02 — Developer API keys / Create test API key\" first.');",
+                  "}",
+                  "const nonce = Date.now();",
+                  "const idempotencyKey = `postman_${nonce}_${pm.variables.replaceIn('{{$guid}}')}`;",
+                  "const customerEmail = `postman-${nonce}@example.com`;",
+                  "pm.collectionVariables.set('idempotencyKey', idempotencyKey);",
+                  "pm.collectionVariables.set('customerEmail', customerEmail);",
+                  "if (pm.environment) {",
+                  "  pm.environment.set('idempotencyKey', idempotencyKey);",
+                  "  pm.environment.set('customerEmail', customerEmail);",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([201]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};",
+                  "const json = pm.response.json();",
+                  "if (json.id) setRuntime('paymentId', json.id);",
+                  "const checkoutId = json.checkout_url && json.checkout_url.match(/(cl_[A-Za-z0-9]+)/);",
+                  "if (checkoutId) setRuntime('checkoutLinkId', checkoutId[1]);",
+                  "if (json.customer_id) setRuntime('customerDatabaseId', json.customer_id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Replay payment idempotently",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{merchantApiKey}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{apiBaseUrl}}/v1/payments",
+            "description": "Reuses the exact idempotency key and request body from Create payment.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"4.00\",\n  \"currency\": \"USDC\",\n  \"description\": \"Postman Render flow\",\n  \"customer_email\": \"{{customerEmail}}\",\n  \"customer_name\": \"Postman Test Customer\",\n  \"metadata\": {\n    \"source\": \"postman\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('merchantApiKey')) {",
+                  "  pm.execution.skipRequest();",
+                  "  throw new Error('merchantApiKey is empty. Run \"02 — Developer API keys / Create test API key\" first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([201]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List payments",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{merchantApiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{apiBaseUrl}}/v1/payments?limit=25"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('merchantApiKey')) {",
+                  "  pm.execution.skipRequest();",
+                  "  throw new Error('merchantApiKey is empty. Run \"02 — Developer API keys / Create test API key\" first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Retrieve payment",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{merchantApiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{apiBaseUrl}}/v1/payments/{{paymentId}}"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('merchantApiKey')) {",
+                  "  pm.execution.skipRequest();",
+                  "  throw new Error('merchantApiKey is empty. Run \"02 — Developer API keys / Create test API key\" first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List payment events",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{merchantApiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{apiBaseUrl}}/v1/payments/{{paymentId}}/events"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('merchantApiKey')) {",
+                  "  pm.execution.skipRequest();",
+                  "  throw new Error('merchantApiKey is empty. Run \"02 — Developer API keys / Create test API key\" first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Retrieve public checkout link",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apiBaseUrl}}/v1/checkout-links/{{checkoutLinkId}}"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cancel payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{merchantApiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{apiBaseUrl}}/v1/payments/{{paymentId}}/cancel"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('merchantApiKey')) {",
+                  "  pm.execution.skipRequest();",
+                  "  throw new Error('merchantApiKey is empty. Run \"02 — Developer API keys / Create test API key\" first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 — Customers",
+      "item": [
+        {
+          "name": "List customers — merchant API",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{merchantApiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{apiBaseUrl}}/v1/customers?limit=25"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('merchantApiKey')) {",
+                  "  pm.execution.skipRequest();",
+                  "  throw new Error('merchantApiKey is empty. Run \"02 — Developer API keys / Create test API key\" first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};",
+                  "const json = pm.response.json();",
+                  "const first = Array.isArray(json.data) ? json.data[0] : undefined;",
+                  "if (first && first.id) setRuntime('customerId', first.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Retrieve customer — merchant API",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{merchantApiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{apiBaseUrl}}/v1/customers/{{customerId}}"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('merchantApiKey')) {",
+                  "  pm.execution.skipRequest();",
+                  "  throw new Error('merchantApiKey is empty. Run \"02 — Developer API keys / Create test API key\" first.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List customers — dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "ht_dashboard={{dashboardCookie}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{apiBaseUrl}}/api/developer/customers?limit=25"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('dashboardCookie')) {",
+                  "  pm.execution.skipRequest();",
+                  "  throw new Error('dashboardCookie is empty. Run folders 00 and 01 first, and set authSecret.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};",
+                  "const json = pm.response.json();",
+                  "const first = Array.isArray(json.data) ? json.data[0] : undefined;",
+                  "if (first && first.id) setRuntime('customerId', first.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Retrieve customer — dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "ht_dashboard={{dashboardCookie}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{apiBaseUrl}}/api/developer/customers/{{customerId}}"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('dashboardCookie')) {",
+                  "  pm.execution.skipRequest();",
+                  "  throw new Error('dashboardCookie is empty. Run folders 00 and 01 first, and set authSecret.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05 — Webhooks",
+      "item": [
+        {
+          "name": "Create webhook endpoint",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "ht_dashboard={{dashboardCookie}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{apiBaseUrl}}/api/developer/webhook-endpoints",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"{{webhookTargetUrl}}\",\n  \"environment\": \"test\",\n  \"events\": [\n    \"payment.completed\",\n    \"payment.failed\"\n  ],\n  \"description\": \"Postman test endpoint\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('dashboardCookie')) {",
+                  "  pm.execution.skipRequest();",
+                  "  throw new Error('dashboardCookie is empty. Run folders 00 and 01 first, and set authSecret.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([201]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};",
+                  "const json = pm.response.json();",
+                  "if (json.id) setRuntime('webhookEndpointId', json.id);",
+                  "if (json.signing_secret) setRuntime('webhookSigningSecret', json.signing_secret);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List webhook endpoints",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "ht_dashboard={{dashboardCookie}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{apiBaseUrl}}/api/developer/webhook-endpoints"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('dashboardCookie')) {",
+                  "  pm.execution.skipRequest();",
+                  "  throw new Error('dashboardCookie is empty. Run folders 00 and 01 first, and set authSecret.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update webhook endpoint",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "ht_dashboard={{dashboardCookie}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{apiBaseUrl}}/api/developer/webhook-endpoints/{{webhookEndpointId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Updated by Postman\",\n  \"events\": [\n    \"payment.completed\"\n  ],\n  \"active\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('dashboardCookie')) {",
+                  "  pm.execution.skipRequest();",
+                  "  throw new Error('dashboardCookie is empty. Run folders 00 and 01 first, and set authSecret.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Rotate webhook signing secret",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "ht_dashboard={{dashboardCookie}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{apiBaseUrl}}/api/developer/webhook-endpoints/{{webhookEndpointId}}/rotate-secret"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('dashboardCookie')) {",
+                  "  pm.execution.skipRequest();",
+                  "  throw new Error('dashboardCookie is empty. Run folders 00 and 01 first, and set authSecret.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};",
+                  "const json = pm.response.json();",
+                  "if (json.signing_secret) setRuntime('webhookSigningSecret', json.signing_secret);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Send test webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "ht_dashboard={{dashboardCookie}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{apiBaseUrl}}/api/developer/webhook-endpoints/{{webhookEndpointId}}/test"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('dashboardCookie')) {",
+                  "  pm.execution.skipRequest();",
+                  "  throw new Error('dashboardCookie is empty. Run folders 00 and 01 first, and set authSecret.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List webhook deliveries",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "ht_dashboard={{dashboardCookie}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{apiBaseUrl}}/api/developer/webhook-endpoints/{{webhookEndpointId}}/deliveries?limit=25"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('dashboardCookie')) {",
+                  "  pm.execution.skipRequest();",
+                  "  throw new Error('dashboardCookie is empty. Run folders 00 and 01 first, and set authSecret.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};",
+                  "const json = pm.response.json();",
+                  "const first = Array.isArray(json.data) ? json.data[0] : undefined;",
+                  "if (first && first.id) setRuntime('deliveryId', first.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Retry webhook delivery — manual",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "ht_dashboard={{dashboardCookie}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{apiBaseUrl}}/api/developer/webhook-endpoints/{{webhookEndpointId}}/deliveries/{{deliveryId}}/retry",
+            "description": "Requires a real pending/failed delivery ID. Redis/workers are disabled on the current Render deployment, so 404 is expected until delivery processing is enabled."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('dashboardCookie')) {",
+                  "  pm.execution.skipRequest();",
+                  "  throw new Error('dashboardCookie is empty. Run folders 00 and 01 first, and set authSecret.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200,404]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete webhook endpoint",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "ht_dashboard={{dashboardCookie}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{apiBaseUrl}}/api/developer/webhook-endpoints/{{webhookEndpointId}}"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('dashboardCookie')) {",
+                  "  pm.execution.skipRequest();",
+                  "  throw new Error('dashboardCookie is empty. Run folders 00 and 01 first, and set authSecret.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "06 — API key cleanup",
+      "item": [
+        {
+          "name": "Rotate API key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "ht_dashboard={{dashboardCookie}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{apiBaseUrl}}/api/developer/api-keys/{{apiKeyId}}/rotate"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('dashboardCookie')) {",
+                  "  pm.execution.skipRequest();",
+                  "  throw new Error('dashboardCookie is empty. Run folders 00 and 01 first, and set authSecret.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};",
+                  "const json = pm.response.json();",
+                  "if (json.id) setRuntime('apiKeyId', json.id);",
+                  "if (json.secret_key) setRuntime('merchantApiKey', json.secret_key);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Revoke rotated API key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "ht_dashboard={{dashboardCookie}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{apiBaseUrl}}/api/developer/api-keys/{{apiKeyId}}/revoke"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('dashboardCookie')) {",
+                  "  pm.execution.skipRequest();",
+                  "  throw new Error('dashboardCookie is empty. Run folders 00 and 01 first, and set authSecret.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected HTTP status', () => {",
+                  "  pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const setRuntime = (key, value) => {",
+                  "  pm.collectionVariables.set(key, value);",
+                  "  if (pm.environment) pm.environment.set(key, value);",
+                  "};"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

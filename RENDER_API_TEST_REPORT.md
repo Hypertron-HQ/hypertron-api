@@ -2,12 +2,19 @@
 
 **Target:** https://hypertron-api.onrender.com  
 **Core:** https://hypertron-core-backend.onrender.com  
-**Retested:** 2026-08-15T20:15Z (UTC)
+**Retested:** 2026-08-15T20:38Z (UTC)
 **This run:** full flow (identity → internal sync → mint `sk_test_` → payments / customers / webhooks)
 
-> **Deployment status:** the fixes are live on Render. All 39 checks passed.
+> **Deployment status:** the main deployed flow is healthy. 40 of 41 checks
+> passed; one webhook error-status contract mismatch remains.
 > MongoDB is up, the core backend integration is configured, and Redis is
 > intentionally disabled.
+
+**Render log trace:** every curl sent an `X-Request-Id` beginning with
+`render-audit-20260815-2037z-`. Search that exact prefix in the Render logs.
+
+One request before the scored run timed out while the free Render core service
+was cold-starting. The retry succeeded and all five core checks then passed.
 
 ### Local fix verification
 
@@ -42,11 +49,13 @@ and stack trace for unhandled 500s. Client responses remain sanitized.
 
 | | Count |
 |---|---|
-| **Passed** | **39** |
-| **Failed** | **0** |
-| Total curls | 39 |
+| **Passed** | **40** |
+| **Failed** | **1** |
+| Total endpoint checks | 41 |
 
-Core-backend: **5 / 5 PASS**. Hypertron API: **34 / 34 PASS**.
+Core-backend: **5 / 5 PASS**. Hypertron API: **35 / 36 PASS**.
+The flow sent 42 HTTP requests because creating the separate payment used by
+the cancellation check is a setup request.
 
 `GET /health` this run: **200** (`database: up`, `coreBackend: configured`, `redis: disabled`).
 
@@ -112,22 +121,43 @@ A separate payment was created and canceled.
 
 | # | Request | Got | Want | Status |
 |---|---|---|---|---|
-| 29 | `GET /v1/customers` | 200 | 200 | PASS (`n=8`) |
+| 29 | `GET /v1/customers` | 200 | 200 | PASS (`n=12`) |
 | 30 | `GET /v1/customers/:id` | 200 | 200 | PASS |
 | 31 | `GET /v1/customers` unknown | 404 | 404 | PASS |
 | 32 | `GET /api/developer/customers` | 200 | 200 | PASS |
+| 33 | `GET /api/developer/customers/:id` | 200 | 200 | PASS |
 
 ### Webhooks
 
 | # | Request | Got | Want | Status |
 |---|---|---|---|---|
-| 33 | `POST /api/developer/webhook-endpoints` | 201 | 201 | PASS |
-| 34 | `GET` list | 200 | 200 | PASS |
-| 35 | `PATCH :id` | 200 | 200 | PASS |
-| 36 | `POST :id/rotate-secret` | 200 | 200 | PASS |
-| 37 | `POST :id/test` | 200 | 200 | PASS |
-| 38 | `GET :id/deliveries` | 200 | 200 | PASS |
-| 39 | `DELETE :id` | 200 | 200 | PASS |
+| 34 | `POST /api/developer/webhook-endpoints` | 201 | 201 | PASS |
+| 35 | `GET` list | 200 | 200 | PASS |
+| 36 | `PATCH :id` | 200 | 200 | PASS |
+| 37 | `POST :id/rotate-secret` | 200 | 200 | PASS |
+| 38 | `POST :id/test` | 200 | 200 | PASS |
+| 39 | `GET :id/deliveries` | 200 | 200 | PASS |
+| 40 | `POST :id/deliveries/whd_nope/retry` | **400** | 404 | **FAIL** |
+| 41 | `DELETE :id` | 200 | 200 | PASS |
+
+The API-level webhook test passed with HTTP 200. Its temporary
+`example.com` receiver returned 405, so the response correctly reported
+`delivered: false`; this is an external receiver result, not an API failure.
+
+---
+
+## Current failure
+
+### Webhook delivery retry with an unknown ID — HTTP 400 instead of 404
+
+```json
+{"error":{"type":"invalid_request_error","code":"delivery_not_found","message":"No such webhook delivery: 'whd_nope'","request_id":"render-audit-20260815-2037z-39"}}
+```
+
+The endpoint is reachable and returns the correct domain error code, but its
+HTTP status conflicts with the documented 404 response. The service currently
+throws `InvalidRequestException` (400) for a missing delivery while the
+controller/OpenAPI contract declares 404.
 
 ---
 
@@ -215,4 +245,6 @@ API  API-key lifecycle                2xx  create/list/rotate/revoke
 5. E2E regressions cover every previously failing dashboard/payment/webhook
    path.
 
-The post-deploy curl run verified all five fixes with **39 passed / 0 failed**.
+The original post-deploy flow remains verified. The expanded endpoint run
+finished with **40 passed / 1 failed**, solely due to the webhook retry
+HTTP-status contract mismatch documented above.
