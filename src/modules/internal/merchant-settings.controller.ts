@@ -4,7 +4,13 @@
  */
 
 import { Body, Controller, HttpCode, Put, UseGuards } from '@nestjs/common';
-import { ApiExcludeController } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiProperty,
+} from '@nestjs/swagger';
 import {
   IsNotEmpty,
   IsOptional,
@@ -18,18 +24,32 @@ import { InternalServiceGuard } from '@/common/guards/internal-service.guard';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 
 export class UpsertMerchantSettingsDto {
+  @ApiProperty({
+    description: 'Business ID from Core Backend',
+    example: 'biz_12345',
+  })
   @IsString()
   @IsNotEmpty()
   @MinLength(1)
   @MaxLength(128)
   businessId!: string;
 
+  @ApiProperty({
+    description: 'Stellar wallet address of the merchant',
+    example: 'GABC123...',
+  })
   @IsString()
   @IsNotEmpty()
   @MinLength(1)
   @MaxLength(128)
   walletAddress!: string;
 
+  @ApiProperty({
+    description: 'Stellar receive address for payments (optional)',
+    example: 'GXYZ789...',
+    required: false,
+    nullable: true,
+  })
   @ValidateIf((_, v) => v !== null && v !== undefined)
   @IsOptional()
   @IsString()
@@ -37,14 +57,56 @@ export class UpsertMerchantSettingsDto {
   receiveAddress?: string | null;
 }
 
-@ApiExcludeController()
+@ApiTags('Internal')
+@ApiBearerAuth('InternalToken')
 @Controller('internal/merchant-settings')
 @UseGuards(InternalServiceGuard)
+@ApiResponse({
+  status: 401,
+  description: 'Missing or invalid X-Internal-Token',
+  schema: {
+    type: 'object',
+    properties: {
+      ok: { type: 'boolean', example: false },
+      error: { type: 'string', example: 'Unauthorized' },
+    },
+  },
+})
 export class MerchantSettingsController {
   constructor(private readonly prisma: PrismaService) {}
 
   @Put()
   @HttpCode(200)
+  @ApiOperation({
+    summary: 'Sync merchant settings',
+    description:
+      'Internal endpoint called by Core Backend to sync merchant settings. ' +
+      'Requires X-Internal-Token header. Upserts merchant settings based on businessId or walletAddress.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Settings synchronized successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean', example: true },
+        businessId: { type: 'string', example: 'biz_12345' },
+        walletAddress: { type: 'string', example: 'GABC123...' },
+        receiveAddress: { type: 'string', example: 'GXYZ789...', nullable: true },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid request body',
+    schema: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean', example: false },
+        error: { type: 'string', example: 'businessId and walletAddress required' },
+      },
+    },
+  })
   async upsert(@Body() body: UpsertMerchantSettingsDto) {
     const businessId = String(body.businessId ?? '').trim();
     const walletAddress = String(body.walletAddress ?? '').trim();
