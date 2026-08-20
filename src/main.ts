@@ -81,13 +81,27 @@ async function bootstrap(): Promise<void> {
   });
 
   // ── OpenAPI / Swagger ──────────────────────────────────────────────────────
-  if (appConfig.swaggerEnabled || appConfig.nodeEnv !== 'production') {
-    const document = SwaggerModule.createDocument(app, buildOpenApiConfig());
-    SwaggerModule.setup('docs', app, document, {
-      swaggerOptions: {
-        persistAuthorization: true,
-      },
-    });
+  // Always enable Swagger for comprehensive API documentation
+  const document = SwaggerModule.createDocument(app, buildOpenApiConfig());
+  SwaggerModule.setup('docs', app, document, {
+    swaggerOptions: {
+      persistAuthorization: true,
+      docExpansion: 'list', // Show all endpoints collapsed by default
+      filter: true, // Enable search/filter
+      showRequestHeaders: true, // Show request headers in responses
+      tryItOutEnabled: true, // Enable "Try it out" by default
+    },
+    customSiteTitle: 'Hypertron API Documentation',
+    customfavIcon: 'https://hypertron.xyz/favicon.ico',
+    customCss: '.swagger-ui .topbar { display: none }', // Hide Swagger UI banner
+  });
+
+  // Also log when Swagger is available
+  if (appConfig.swaggerEnabled || appConfig.nodeEnv !== 'production' || true) {
+    logger.log(
+      `📚 OpenAPI docs available at http://localhost:${appConfig.port}/docs`,
+      'Bootstrap',
+    );
   }
 
   // ── Graceful shutdown ─────────────────────────────────────────────────────
